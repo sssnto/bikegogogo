@@ -72,7 +72,8 @@ Info.plist 需要配置：
 
 - `Info.plist File` 指向 iOS 模板。
 - `Code Signing Entitlements` 指向 iOS entitlements 模板。
-- 真机联调本地后端时，把 `BikeGoGoAPIBaseURL` 改成 Mac 的局域网 IP，例如 `http://192.168.1.23:8080`。
+- 真机联调公网后端时，`BikeGoGoAPIBaseURL` 使用 `https://bikegogogo-server.sssnto.cn:8443`。
+- 如果临时联调 Mac 本地后端，再把 `BikeGoGoAPIBaseURL` 改成 Mac 的局域网 IP，例如 `http://192.168.1.23:8080`。
 
 ## 4. watchOS Capabilities
 

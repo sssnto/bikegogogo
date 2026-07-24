@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>BikeGoGoAPIBaseURL</key>
-	<string>http://localhost:8080</string>
+	<string>https://bikegogogo-server.sssnto.cn:8443</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>
@@ -31,4 +31,3 @@
 	</array>
 </dict>
 </plist>
-

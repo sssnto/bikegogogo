@@ -80,17 +80,33 @@ curl http://<NAS_IP>:8080/health
 
 ## Docker Compose 部署
 
-`docker-compose.yml` 示例：
+仓库已经提供 NAS Compose 模板：
+
+```text
+deploy/nas/docker-compose.yml
+deploy/nas/.env.example
+```
+
+把 `deploy/nas` 目录复制到 NAS 后：
+
+```bash
+cp .env.example .env
+```
+
+然后把 `.env` 里的 `LIVEKIT_API_KEY` 和 `LIVEKIT_API_SECRET` 改成你的真实值。
+
+`docker-compose.yml` 内容示例：
 
 ```yaml
 services:
   bikegogogo-server:
-    image: ghcr.io/<你的 GitHub 用户名小写>/bikegogogo-server:latest
+    image: ghcr.io/sssnto/bikegogogo-server:v0.1.0
     container_name: bikegogogo-server
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "${BIKEGOGOGO_HTTP_PORT:-8080}:8080"
     environment:
+      NODE_ENV: "production"
       PORT: "8080"
       LIVEKIT_URL: "wss://bikegogo-qy7s1sfz.livekit.cloud"
       LIVEKIT_API_KEY: "${LIVEKIT_API_KEY}"
@@ -128,16 +144,16 @@ NAS 映射端口：建议 8080/tcp
 公网访问：建议通过反向代理提供 HTTPS
 ```
 
-推荐公网域名：
+当前公网地址：
 
 ```text
-https://api.your-domain.com
+https://bikegogogo-server.sssnto.cn:8443
 ```
 
 iOS App 的 `BikeGoGoAPIBaseURL` 配置为：
 
 ```text
-https://api.your-domain.com
+https://bikegogogo-server.sssnto.cn:8443
 ```
 
 不要对公网暴露：
@@ -219,7 +235,6 @@ Content-Type: application/json
 示例转发：
 
 ```text
-https://api.your-domain.com/health -> http://127.0.0.1:8080/health
-https://api.your-domain.com/v1/*  -> http://127.0.0.1:8080/v1/*
+https://bikegogogo-server.sssnto.cn:8443/health -> http://127.0.0.1:8080/health
+https://bikegogogo-server.sssnto.cn:8443/v1/*  -> http://127.0.0.1:8080/v1/*
 ```
-
