@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSHealthShareUsageDescription</key>
+	<string>BikeGoGo Watch 需要读取心率和运动数据来展示骑行统计。</string>
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>BikeGoGo Watch 需要保存骑行 workout 到 Apple 健康。</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>BikeGoGo Watch 需要用于骑行小队静音和语音控制。</string>
+	<key>WKBackgroundModes</key>
+	<array>
+		<string>workout-processing</string>
+	</array>
+</dict>
+</plist>
+
