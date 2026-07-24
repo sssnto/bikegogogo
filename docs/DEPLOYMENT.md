@@ -14,37 +14,35 @@
 - 可能无法完整开启 HealthKit、Push Notifications、TestFlight 和部分真机签名能力。
 - 审核通过后，第一时间在 Apple Developer 后台确认 Bundle ID、Capabilities 和证书。
 
-## 2. 创建 Xcode 工程
+## 2. 打开现有 Xcode 工程
 
-当前仓库已经准备好源码目录。第一次创建 Xcode 工程时：
+仓库已经包含真正的 iOS 和 watchOS target，不需要再次创建工程：
 
-1. 打开 Xcode。
-2. File > New > Project。
-3. 选择 iOS App。
-4. Product Name 填 `BikeGoGo`。
-5. Interface 选 SwiftUI。
-6. Language 选 Swift。
-7. Bundle Identifier 建议使用：`com.yourname.bikegogogo`。
-8. 保存位置选择本仓库根目录。
-9. 创建后添加 watchOS App target：File > New > Target > watchOS App。
+```bash
+open BikeGoGo/BikeGoGo.xcodeproj
+```
 
-然后把这些源码加入 target：
+首次打开后：
 
-- `Apps/iOS/BikeGoGo` 加入 iOS App target。
-- `Apps/watchOS/BikeGoGoWatch` 加入 Watch App target。
-- `Sources/BikeGoGoCore` 作为本地 Swift Package 被两个 target 依赖。
+1. 等待顶部状态栏中的 Swift Package 解析结束。
+2. 在 Project Navigator 选择蓝色的 `BikeGoGo` 项目。
+3. iPhone target 是 `BikeGoGo`，Bundle ID 是 `com.sssnto.BikeGoGo`。
+4. Watch target 是 `BikeGoGoWatch`，Bundle ID 是 `com.sssnto.BikeGoGo.watchkitapp`。
+5. 两个 target 的 Team 都检查为你的 Apple Developer Team。
+6. 模拟器先选择 `BikeGoGo` scheme 和一台 iPhone，按 `Cmd+R`。
+7. Watch 模拟器选择 `BikeGoGoWatch` scheme 和一组配对的 Apple Watch，按 `Cmd+R`。
 
-## 3. iOS Capabilities
+工程会自动把 `BikeGoGoWatch.app` 嵌入 iPhone App 的 `Watch` 目录。LiveKit 通过 Swift Package Manager 管理，版本锁定文件位于 Xcode workspace 的 `xcshareddata/swiftpm`。
 
-iOS App target 需要开启：
+## 3. iPhone 真机
+
+iOS App target 使用：
 
 - Background Modes
   - Location updates
   - Audio, AirPlay, and Picture in Picture
   - Remote notifications
-- HealthKit
-- Push Notifications
-- Sign in with Apple，账号功能阶段开启。
+- HealthKit、Push Notifications 和 Sign in with Apple 在账号同步阶段再开启。
 
 Info.plist 需要配置：
 
@@ -75,7 +73,17 @@ Info.plist 需要配置：
 - 真机联调公网后端时，`BikeGoGoAPIBaseURL` 使用 `https://bikegogogo-server.sssnto.cn:8443`。
 - 如果临时联调 Mac 本地后端，再把 `BikeGoGoAPIBaseURL` 改成 Mac 的局域网 IP，例如 `http://192.168.1.23:8080`。
 
-## 4. watchOS Capabilities
+第一次连接 iPhone：
+
+1. 用数据线或同一 Wi-Fi 连接 iPhone，手机上开启 Developer Mode。
+2. Xcode 顶部设备菜单选择这台 iPhone。
+3. 在 `BikeGoGo > Signing & Capabilities` 确认没有红色签名错误。
+4. 按 `Cmd+R` 安装。
+5. 第一次开始骑行时先允许“使用 App 时定位”，随后允许“始终定位”。
+6. 第一次加入语音时允许麦克风。
+7. 骑行开始后锁屏 3 至 5 分钟，再解锁确认路线和计时继续增长。
+
+## 4. Apple Watch 真机
 
 Watch App target 需要开启：
 
@@ -83,12 +91,23 @@ Watch App target 需要开启：
 - Background Modes > Workout processing。
 - 如果 Watch 端播放语音或提示音，再开启 Audio。
 
-Watch extension 的 Info 也要配置 HealthKit 使用说明。
+Watch target 已配置 HealthKit 使用说明、`workout-processing` 后台模式和 companion Bundle ID。
 
 仓库已经提供模板：
 
 - `Apps/watchOS/BikeGoGoWatch/Support/Info.plist`
 - `Apps/watchOS/BikeGoGoWatch/Support/BikeGoGoWatch.entitlements`
+
+真机运行：
+
+1. 确认 Apple Watch 已与测试 iPhone 配对，并在 Watch App 中开启开发者模式。
+2. Xcode 选择 `BikeGoGoWatch` scheme。
+3. 设备选择与该 iPhone 配对的 Apple Watch。
+4. 在 `BikeGoGoWatch > Signing & Capabilities` 确认 Team 正确。
+5. 按 `Cmd+R`，首次启动允许读写 HealthKit。
+6. 从 Watch 开始训练，确认 iPhone 骑行页同步进入记录状态并显示心率。
+7. 从任意一端暂停、继续和结束，确认另一端同步。
+8. 结束后在 iPhone 的“健康/健身记录”中确认 outdoor cycling workout 已保存。
 
 ## 5. LiveKit
 
@@ -125,6 +144,14 @@ curl -X POST http://localhost:8080/v1/voice/rooms/weekend/token \
   -H "Content-Type: application/json" \
   -d '{"identity":"local-user","displayName":"Peng"}'
 ```
+
+当前 App 已指向公网服务 `https://bikegogogo-server.sssnto.cn:8443`。两台 iPhone 使用固定的演示小队房间，每台安装会生成自己的持久语音 identity，因此可以直接进行双机测试：
+
+1. 两台 iPhone 都安装当前版本。
+2. 两边打开“语音”页并点击“加入语音”。
+3. 确认成员列表出现两名成员。
+4. 分别测试静音、锁屏、切后台。
+5. 通话中切换 Wi-Fi 和蜂窝网络，界面应短暂显示“正在重连”后恢复。
 
 后端环境变量示例：
 

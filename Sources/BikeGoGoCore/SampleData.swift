@@ -8,6 +8,7 @@ public enum SampleData {
     ]
 
     public static let group = CyclingGroup(
+        id: UUID(uuidString: "B1CE60D0-0000-4000-8000-000000000001")!,
         name: "周末滨江骑行",
         members: friends
     )
@@ -36,14 +37,9 @@ public enum SampleData {
         VoiceRoom(
             groupID: group.id,
             roomName: "weekend-riverside",
-            participants: [
-                VoiceParticipant(displayName: "阿鹏", isMuted: false, isSpeaking: true, connectionQuality: .excellent),
-                VoiceParticipant(displayName: "小林", isMuted: false, isSpeaking: false, connectionQuality: .good),
-                VoiceParticipant(displayName: "Kevin", isMuted: true, isSpeaking: false, connectionQuality: .weak)
-            ],
-            isJoined: true,
+            participants: [],
+            isJoined: false,
             isMuted: false
         )
     }
 }
-

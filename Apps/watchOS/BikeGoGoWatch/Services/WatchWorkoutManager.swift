@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import HealthKit
 
@@ -9,12 +10,15 @@ final class WatchWorkoutManager: NSObject, ObservableObject {
     @Published private(set) var distanceMeters: Double = 0
     @Published private(set) var heartRate: Double = 0
     @Published private(set) var speedMetersPerSecond: Double = 0
+    @Published private(set) var errorMessage: String?
 
     private let healthStore = HKHealthStore()
     private var session: HKWorkoutSession?
     private var builder: HKLiveWorkoutBuilder?
-    private var startDate: Date?
+    private var activeSegmentStartedAt: Date?
+    private var activeElapsedSeconds: TimeInterval = 0
     private var timer: Timer?
+    var onMetricsChanged: ((TimeInterval, Double, Double, Double) -> Void)?
 
     var elapsedText: String {
         let minutes = Int(elapsedSeconds) / 60
@@ -50,11 +54,13 @@ final class WatchWorkoutManager: NSObject, ObservableObject {
         do {
             try await healthStore.requestAuthorization(toShare: typesToShare, read: typesToRead)
         } catch {
-            print("HealthKit authorization failed: \(error.localizedDescription)")
+            errorMessage = "HealthKit 授权失败：\(error.localizedDescription)"
         }
     }
 
     func startWorkout() {
+        guard !hasStarted else { return }
+
         let configuration = HKWorkoutConfiguration()
         configuration.activityType = .cycling
         configuration.locationType = .outdoor
@@ -72,7 +78,12 @@ final class WatchWorkoutManager: NSObject, ObservableObject {
 
             self.session = session
             self.builder = builder
-            self.startDate = Date()
+            self.activeElapsedSeconds = 0
+            self.activeSegmentStartedAt = Date()
+            self.elapsedSeconds = 0
+            self.distanceMeters = 0
+            self.heartRate = 0
+            self.speedMetersPerSecond = 0
             self.hasStarted = true
             self.isRunning = true
 
@@ -84,35 +95,91 @@ final class WatchWorkoutManager: NSObject, ObservableObject {
             }
             startTimer()
         } catch {
-            print("Unable to start workout: \(error.localizedDescription)")
+            errorMessage = "无法开始骑行训练：\(error.localizedDescription)"
         }
     }
 
     func pauseWorkout() {
+        guard isRunning else { return }
+        activeElapsedSeconds = currentElapsedDuration()
+        activeSegmentStartedAt = nil
         session?.pause()
         isRunning = false
+        publishMetrics()
     }
 
     func resumeWorkout() {
+        guard hasStarted, !isRunning else { return }
+        activeSegmentStartedAt = Date()
         session?.resume()
         isRunning = true
     }
 
     func endWorkout() {
+        guard hasStarted else { return }
+        activeElapsedSeconds = currentElapsedDuration()
+        activeSegmentStartedAt = nil
         session?.end()
         isRunning = false
-        hasStarted = false
         timer?.invalidate()
+        publishMetrics()
     }
 
     private func startTimer() {
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in
-                guard let self, self.isRunning, let startDate = self.startDate else { return }
-                self.elapsedSeconds = Date().timeIntervalSince(startDate)
+                guard let self, self.isRunning else { return }
+                self.elapsedSeconds = self.currentElapsedDuration()
+                self.publishMetrics()
             }
         }
+    }
+
+    private func currentElapsedDuration(at date: Date = Date()) -> TimeInterval {
+        guard let activeSegmentStartedAt else { return activeElapsedSeconds }
+        return activeElapsedSeconds + max(date.timeIntervalSince(activeSegmentStartedAt), 0)
+    }
+
+    private func publishMetrics() {
+        onMetricsChanged?(elapsedSeconds, distanceMeters, heartRate, speedMetersPerSecond)
+    }
+
+    private func finishWorkout(at date: Date) {
+        guard let builder else {
+            resetWorkout()
+            return
+        }
+
+        builder.endCollection(withEnd: date) { success, error in
+            guard success else {
+                Task { @MainActor in
+                    self.errorMessage = "结束训练失败：\(error?.localizedDescription ?? "未知错误")"
+                    self.resetWorkout()
+                }
+                return
+            }
+
+            builder.finishWorkout { _, error in
+                let errorDescription = error?.localizedDescription
+                Task { @MainActor in
+                    if let errorDescription {
+                        self.errorMessage = "保存训练失败：\(errorDescription)"
+                    }
+                    self.resetWorkout()
+                }
+            }
+        }
+    }
+
+    private func resetWorkout() {
+        timer?.invalidate()
+        timer = nil
+        session = nil
+        builder = nil
+        activeSegmentStartedAt = nil
+        hasStarted = false
+        isRunning = false
     }
 }
 
@@ -125,6 +192,9 @@ extension WatchWorkoutManager: HKWorkoutSessionDelegate {
     ) {
         Task { @MainActor in
             isRunning = toState == .running
+            if toState == .ended {
+                finishWorkout(at: date)
+            }
         }
     }
 
@@ -161,10 +231,10 @@ extension WatchWorkoutManager: HKLiveWorkoutBuilderDelegate {
             if elapsedSeconds > 0 {
                 speedMetersPerSecond = distanceMeters / elapsedSeconds
             }
+            publishMetrics()
 
         default:
             break
         }
     }
 }
-

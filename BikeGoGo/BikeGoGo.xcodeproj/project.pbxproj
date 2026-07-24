@@ -1,0 +1,693 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		04462BFBF4350FD47998AA1C /* BikeGoGoWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = D789EC4B5EFC2034AF69D464 /* BikeGoGoWatch.app */; };
+		0967886FA63E9BD02750D76D /* WatchConnectivity.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6AF28AA8384C081A7E1A311A /* WatchConnectivity.framework */; };
+		1EDEC4791AD97A536EAEBA50 /* WatchRideView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA2F9917DE74AD1C088CAC0F /* WatchRideView.swift */; };
+		6FA2ABFE301312C000385B45 /* WatchSessionBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FA2ABF4301312BF00385B45 /* WatchSessionBridge.swift */; };
+		6FA2ABFF301312C000385B45 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FA2ABFA301312BF00385B45 /* AppState.swift */; };
+		6FA2AC00301312C000385B45 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FA2ABFC301312BF00385B45 /* RootView.swift */; };
+		6FA2AC01301312C000385B45 /* VoiceRoomClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FA2ABF2301312BF00385B45 /* VoiceRoomClient.swift */; };
+		6FA2AC02301312C000385B45 /* VoiceRoomView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FA2ABED301312BF00385B45 /* VoiceRoomView.swift */; };
+		6FA2AC03301312C000385B45 /* BikeGoGoApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FA2ABFB301312BF00385B45 /* BikeGoGoApp.swift */; };
+		6FA2AC04301312C000385B45 /* RideDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FA2ABE7301312BF00385B45 /* RideDetailView.swift */; };
+		6FA2AC05301312C000385B45 /* LocationRideRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FA2ABF1301312BF00385B45 /* LocationRideRecorder.swift */; };
+		6FA2AC06301312C000385B45 /* VoiceTokenService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FA2ABF3301312BF00385B45 /* VoiceTokenService.swift */; };
+		6FA2AC07301312C000385B45 /* LocalRideStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FA2ABF0301312BF00385B45 /* LocalRideStore.swift */; };
+		6FA2AC08301312C000385B45 /* RideTrackingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FA2ABEA301312BF00385B45 /* RideTrackingView.swift */; };
+		6FA2AC09301312C000385B45 /* RideHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FA2ABE8301312BF00385B45 /* RideHistoryView.swift */; };
+		6FA2AC0A301312C000385B45 /* FriendsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FA2ABEC301312BF00385B45 /* FriendsView.swift */; };
+		6FA2AC0B301312C000385B45 /* AppConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FA2ABF6301312BF00385B45 /* AppConfiguration.swift */; };
+		6FA2AC0F3013216600385B45 /* BikeGoGoCore in Frameworks */ = {isa = PBXBuildFile; productRef = 6FA2AC0E3013216600385B45 /* BikeGoGoCore */; };
+		6FA2AC123013216600385B45 /* LiveKit in Frameworks */ = {isa = PBXBuildFile; productRef = 6FA2AC113013216600385B45 /* LiveKit */; };
+		9274A00DA9BDA00C5E70DCFE /* WatchSessionBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = C544184F65397BBDBF5AD188 /* WatchSessionBridge.swift */; };
+		9DD91701B7521C63CAC55E72 /* HealthKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A09BBFDAAB874D33AB3AA0A6 /* HealthKit.framework */; };
+		A8855BA16382BA269B33C0B7 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 71EC0EB53A7BDC4854D82F65 /* Foundation.framework */; };
+		E3DCA650B91494233E8C3D26 /* WatchWorkoutManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4D1E2FA168DF5900F97CDDA /* WatchWorkoutManager.swift */; };
+		FA1EB89CCD61D0C4C5E84150 /* BikeGoGoWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B03FCC2AC7B99FDA19FD4EAA /* BikeGoGoWatchApp.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		70CD7C181955FB460C60AA9C /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 6FA2ABD13013120600385B45 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 0DC2457E33199D63A0C8DA31;
+			remoteInfo = BikeGoGoWatch;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		8A863C56482DB18978A85469 /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+			files = (
+				04462BFBF4350FD47998AA1C /* BikeGoGoWatch.app in Embed Watch Content */,
+			);
+			name = "Embed Watch Content";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		18C5BD8F50E4D1CB9CD35DA8 /* BikeGoGoWatch.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = BikeGoGoWatch.entitlements; sourceTree = "<group>"; };
+		6AF28AA8384C081A7E1A311A /* WatchConnectivity.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WatchConnectivity.framework; path = System/Library/Frameworks/WatchConnectivity.framework; sourceTree = SDKROOT; };
+		6FA2ABD93013120600385B45 /* BikeGoGo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BikeGoGo.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		6FA2ABE7301312BF00385B45 /* RideDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RideDetailView.swift; sourceTree = "<group>"; };
+		6FA2ABE8301312BF00385B45 /* RideHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RideHistoryView.swift; sourceTree = "<group>"; };
+		6FA2ABEA301312BF00385B45 /* RideTrackingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RideTrackingView.swift; sourceTree = "<group>"; };
+		6FA2ABEC301312BF00385B45 /* FriendsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendsView.swift; sourceTree = "<group>"; };
+		6FA2ABED301312BF00385B45 /* VoiceRoomView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceRoomView.swift; sourceTree = "<group>"; };
+		6FA2ABF0301312BF00385B45 /* LocalRideStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalRideStore.swift; sourceTree = "<group>"; };
+		6FA2ABF1301312BF00385B45 /* LocationRideRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationRideRecorder.swift; sourceTree = "<group>"; };
+		6FA2ABF2301312BF00385B45 /* VoiceRoomClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceRoomClient.swift; sourceTree = "<group>"; };
+		6FA2ABF3301312BF00385B45 /* VoiceTokenService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceTokenService.swift; sourceTree = "<group>"; };
+		6FA2ABF4301312BF00385B45 /* WatchSessionBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchSessionBridge.swift; sourceTree = "<group>"; };
+		6FA2ABF6301312BF00385B45 /* AppConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfiguration.swift; sourceTree = "<group>"; };
+		6FA2ABF7301312BF00385B45 /* BikeGoGo.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = BikeGoGo.entitlements; sourceTree = "<group>"; };
+		6FA2ABF8301312BF00385B45 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		6FA2ABFA301312BF00385B45 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
+		6FA2ABFB301312BF00385B45 /* BikeGoGoApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BikeGoGoApp.swift; sourceTree = "<group>"; };
+		6FA2ABFC301312BF00385B45 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		71EC0EB53A7BDC4854D82F65 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/WatchOS.platform/Developer/SDKs/WatchOS11.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
+		A09BBFDAAB874D33AB3AA0A6 /* HealthKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = HealthKit.framework; path = System/Library/Frameworks/HealthKit.framework; sourceTree = SDKROOT; };
+		A51D40E731FD4D25B923D101 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		B03FCC2AC7B99FDA19FD4EAA /* BikeGoGoWatchApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BikeGoGoWatchApp.swift; sourceTree = "<group>"; };
+		BA2F9917DE74AD1C088CAC0F /* WatchRideView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchRideView.swift; sourceTree = "<group>"; };
+		C544184F65397BBDBF5AD188 /* WatchSessionBridge.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = WatchSessionBridge.swift; path = Services/WatchSessionBridge.swift; sourceTree = "<group>"; };
+		D4D1E2FA168DF5900F97CDDA /* WatchWorkoutManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = WatchWorkoutManager.swift; path = Services/WatchWorkoutManager.swift; sourceTree = "<group>"; };
+		D789EC4B5EFC2034AF69D464 /* BikeGoGoWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BikeGoGoWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		6FA2ABD63013120600385B45 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				6FA2AC0F3013216600385B45 /* BikeGoGoCore in Frameworks */,
+				6FA2AC123013216600385B45 /* LiveKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CDD01CDFF48397A70DE988DD /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A8855BA16382BA269B33C0B7 /* Foundation.framework in Frameworks */,
+				9DD91701B7521C63CAC55E72 /* HealthKit.framework in Frameworks */,
+				0967886FA63E9BD02750D76D /* WatchConnectivity.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		3A6DAD7741E1B290AC50645B /* BikeGoGoWatch */ = {
+			isa = PBXGroup;
+			children = (
+				B03FCC2AC7B99FDA19FD4EAA /* BikeGoGoWatchApp.swift */,
+				BA2F9917DE74AD1C088CAC0F /* WatchRideView.swift */,
+				C544184F65397BBDBF5AD188 /* WatchSessionBridge.swift */,
+				D4D1E2FA168DF5900F97CDDA /* WatchWorkoutManager.swift */,
+				C015C71EC5C117F9A15CBCBC /* Support */,
+			);
+			name = BikeGoGoWatch;
+			path = ../Apps/watchOS/BikeGoGoWatch;
+			sourceTree = "<group>";
+		};
+		6FA2ABD03013120600385B45 = {
+			isa = PBXGroup;
+			children = (
+				6FA2ABFD301312BF00385B45 /* BikeGoGo */,
+				6FA2ABDA3013120600385B45 /* Products */,
+				A89131E84E17697C42872649 /* Frameworks */,
+				3A6DAD7741E1B290AC50645B /* BikeGoGoWatch */,
+			);
+			sourceTree = "<group>";
+		};
+		6FA2ABDA3013120600385B45 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				6FA2ABD93013120600385B45 /* BikeGoGo.app */,
+				D789EC4B5EFC2034AF69D464 /* BikeGoGoWatch.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		6FA2ABE9301312BF00385B45 /* History */ = {
+			isa = PBXGroup;
+			children = (
+				6FA2ABE7301312BF00385B45 /* RideDetailView.swift */,
+				6FA2ABE8301312BF00385B45 /* RideHistoryView.swift */,
+			);
+			path = History;
+			sourceTree = "<group>";
+		};
+		6FA2ABEB301312BF00385B45 /* Ride */ = {
+			isa = PBXGroup;
+			children = (
+				6FA2ABEA301312BF00385B45 /* RideTrackingView.swift */,
+			);
+			path = Ride;
+			sourceTree = "<group>";
+		};
+		6FA2ABEE301312BF00385B45 /* Social */ = {
+			isa = PBXGroup;
+			children = (
+				6FA2ABEC301312BF00385B45 /* FriendsView.swift */,
+				6FA2ABED301312BF00385B45 /* VoiceRoomView.swift */,
+			);
+			path = Social;
+			sourceTree = "<group>";
+		};
+		6FA2ABEF301312BF00385B45 /* Features */ = {
+			isa = PBXGroup;
+			children = (
+				6FA2ABE9301312BF00385B45 /* History */,
+				6FA2ABEB301312BF00385B45 /* Ride */,
+				6FA2ABEE301312BF00385B45 /* Social */,
+			);
+			path = Features;
+			sourceTree = "<group>";
+		};
+		6FA2ABF5301312BF00385B45 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				6FA2ABF0301312BF00385B45 /* LocalRideStore.swift */,
+				6FA2ABF1301312BF00385B45 /* LocationRideRecorder.swift */,
+				6FA2ABF2301312BF00385B45 /* VoiceRoomClient.swift */,
+				6FA2ABF3301312BF00385B45 /* VoiceTokenService.swift */,
+				6FA2ABF4301312BF00385B45 /* WatchSessionBridge.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		6FA2ABF9301312BF00385B45 /* Support */ = {
+			isa = PBXGroup;
+			children = (
+				6FA2ABF6301312BF00385B45 /* AppConfiguration.swift */,
+				6FA2ABF7301312BF00385B45 /* BikeGoGo.entitlements */,
+				6FA2ABF8301312BF00385B45 /* Info.plist */,
+			);
+			path = Support;
+			sourceTree = "<group>";
+		};
+		6FA2ABFD301312BF00385B45 /* BikeGoGo */ = {
+			isa = PBXGroup;
+			children = (
+				6FA2ABEF301312BF00385B45 /* Features */,
+				6FA2ABF5301312BF00385B45 /* Services */,
+				6FA2ABF9301312BF00385B45 /* Support */,
+				6FA2ABFA301312BF00385B45 /* AppState.swift */,
+				6FA2ABFB301312BF00385B45 /* BikeGoGoApp.swift */,
+				6FA2ABFC301312BF00385B45 /* RootView.swift */,
+			);
+			path = BikeGoGo;
+			sourceTree = "<group>";
+		};
+		A89131E84E17697C42872649 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				F0164C0D5852F5AA7CA99CAA /* watchOS */,
+				A09BBFDAAB874D33AB3AA0A6 /* HealthKit.framework */,
+				6AF28AA8384C081A7E1A311A /* WatchConnectivity.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		C015C71EC5C117F9A15CBCBC /* Support */ = {
+			isa = PBXGroup;
+			children = (
+				18C5BD8F50E4D1CB9CD35DA8 /* BikeGoGoWatch.entitlements */,
+				A51D40E731FD4D25B923D101 /* Info.plist */,
+			);
+			name = Support;
+			path = Support;
+			sourceTree = "<group>";
+		};
+		F0164C0D5852F5AA7CA99CAA /* watchOS */ = {
+			isa = PBXGroup;
+			children = (
+				71EC0EB53A7BDC4854D82F65 /* Foundation.framework */,
+			);
+			name = watchOS;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		0DC2457E33199D63A0C8DA31 /* BikeGoGoWatch */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 1F9004CD2FC4B1D6DC66BC87 /* Build configuration list for PBXNativeTarget "BikeGoGoWatch" */;
+			buildPhases = (
+				C6890F5A3AC4B4A5C1306DBA /* Sources */,
+				CDD01CDFF48397A70DE988DD /* Frameworks */,
+				0CB356C532ABCAC0B32EC710 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = BikeGoGoWatch;
+			productName = BikeGoGoWatch;
+			productReference = D789EC4B5EFC2034AF69D464 /* BikeGoGoWatch.app */;
+			productType = "com.apple.product-type.application";
+		};
+		6FA2ABD83013120600385B45 /* BikeGoGo */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 6FA2ABE43013120900385B45 /* Build configuration list for PBXNativeTarget "BikeGoGo" */;
+			buildPhases = (
+				6FA2ABD53013120600385B45 /* Sources */,
+				6FA2ABD63013120600385B45 /* Frameworks */,
+				6FA2ABD73013120600385B45 /* Resources */,
+				8A863C56482DB18978A85469 /* Embed Watch Content */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				F228DDB17B3FB7D6B9FA4633 /* PBXTargetDependency */,
+			);
+			name = BikeGoGo;
+			packageProductDependencies = (
+				6FA2AC0E3013216600385B45 /* BikeGoGoCore */,
+				6FA2AC113013216600385B45 /* LiveKit */,
+			);
+			productName = BikeGoGo;
+			productReference = 6FA2ABD93013120600385B45 /* BikeGoGo.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		6FA2ABD13013120600385B45 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2630;
+				LastUpgradeCheck = 2630;
+				TargetAttributes = {
+					6FA2ABD83013120600385B45 = {
+						CreatedOnToolsVersion = 26.3;
+					};
+				};
+			};
+			buildConfigurationList = 6FA2ABD43013120600385B45 /* Build configuration list for PBXProject "BikeGoGo" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 6FA2ABD03013120600385B45;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				6FA2AC0D3013216600385B45 /* XCLocalSwiftPackageReference "bikegogogo" */,
+				6FA2AC103013216600385B45 /* XCRemoteSwiftPackageReference "client-sdk-swift" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 6FA2ABDA3013120600385B45 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				6FA2ABD83013120600385B45 /* BikeGoGo */,
+				0DC2457E33199D63A0C8DA31 /* BikeGoGoWatch */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		0CB356C532ABCAC0B32EC710 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		6FA2ABD73013120600385B45 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		6FA2ABD53013120600385B45 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				6FA2ABFE301312C000385B45 /* WatchSessionBridge.swift in Sources */,
+				6FA2ABFF301312C000385B45 /* AppState.swift in Sources */,
+				6FA2AC00301312C000385B45 /* RootView.swift in Sources */,
+				6FA2AC01301312C000385B45 /* VoiceRoomClient.swift in Sources */,
+				6FA2AC02301312C000385B45 /* VoiceRoomView.swift in Sources */,
+				6FA2AC03301312C000385B45 /* BikeGoGoApp.swift in Sources */,
+				6FA2AC04301312C000385B45 /* RideDetailView.swift in Sources */,
+				6FA2AC05301312C000385B45 /* LocationRideRecorder.swift in Sources */,
+				6FA2AC06301312C000385B45 /* VoiceTokenService.swift in Sources */,
+				6FA2AC07301312C000385B45 /* LocalRideStore.swift in Sources */,
+				6FA2AC08301312C000385B45 /* RideTrackingView.swift in Sources */,
+				6FA2AC09301312C000385B45 /* RideHistoryView.swift in Sources */,
+				6FA2AC0A301312C000385B45 /* FriendsView.swift in Sources */,
+				6FA2AC0B301312C000385B45 /* AppConfiguration.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C6890F5A3AC4B4A5C1306DBA /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				FA1EB89CCD61D0C4C5E84150 /* BikeGoGoWatchApp.swift in Sources */,
+				1EDEC4791AD97A536EAEBA50 /* WatchRideView.swift in Sources */,
+				9274A00DA9BDA00C5E70DCFE /* WatchSessionBridge.swift in Sources */,
+				E3DCA650B91494233E8C3D26 /* WatchWorkoutManager.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		F228DDB17B3FB7D6B9FA4633 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = BikeGoGoWatch;
+			target = 0DC2457E33199D63A0C8DA31 /* BikeGoGoWatch */;
+			targetProxy = 70CD7C181955FB460C60AA9C /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		2C8EC2AD6FC2E2D97687FE0F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = ../Apps/watchOS/BikeGoGoWatch/Support/BikeGoGoWatch.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = FR9RTRV9BC;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = ../Apps/watchOS/BikeGoGoWatch/Support/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.sssnto.BikeGoGo.watchkitapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Debug;
+		};
+		6FA2ABE23013120900385B45 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = FR9RTRV9BC;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		6FA2ABE33013120900385B45 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = FR9RTRV9BC;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		6FA2ABE53013120900385B45 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = FR9RTRV9BC;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = BikeGoGo/Support/Info.plist;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.sssnto.BikeGoGo;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		6FA2ABE63013120900385B45 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = FR9RTRV9BC;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = BikeGoGo/Support/Info.plist;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.sssnto.BikeGoGo;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		F56EE14A7CF061FFD6D5DA0B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = ../Apps/watchOS/BikeGoGoWatch/Support/BikeGoGoWatch.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = FR9RTRV9BC;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = ../Apps/watchOS/BikeGoGoWatch/Support/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.sssnto.BikeGoGo.watchkitapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				VALIDATE_PRODUCT = YES;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		1F9004CD2FC4B1D6DC66BC87 /* Build configuration list for PBXNativeTarget "BikeGoGoWatch" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F56EE14A7CF061FFD6D5DA0B /* Release */,
+				2C8EC2AD6FC2E2D97687FE0F /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		6FA2ABD43013120600385B45 /* Build configuration list for PBXProject "BikeGoGo" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				6FA2ABE23013120900385B45 /* Debug */,
+				6FA2ABE33013120900385B45 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		6FA2ABE43013120900385B45 /* Build configuration list for PBXNativeTarget "BikeGoGo" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				6FA2ABE53013120900385B45 /* Debug */,
+				6FA2ABE63013120900385B45 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		6FA2AC0D3013216600385B45 /* XCLocalSwiftPackageReference "bikegogogo" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../../bikegogogo;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		6FA2AC103013216600385B45 /* XCRemoteSwiftPackageReference "client-sdk-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/livekit/client-sdk-swift.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.13.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		6FA2AC0E3013216600385B45 /* BikeGoGoCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = BikeGoGoCore;
+		};
+		6FA2AC113013216600385B45 /* LiveKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 6FA2AC103013216600385B45 /* XCRemoteSwiftPackageReference "client-sdk-swift" */;
+			productName = LiveKit;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 6FA2ABD13013120600385B45 /* Project object */;
+}

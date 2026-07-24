@@ -1,5 +1,16 @@
 # BikeGoGo 开发计划
 
+## 当前进度
+
+截至 2026-07-24：
+
+- 阶段 1：开发完成，iOS 和 Watch target 均可构建。
+- 阶段 2：开发完成，等待 iPhone 真机完成锁屏和长距离骑行验收。
+- 阶段 3：开发完成，等待 Apple Developer Program 审核通过后进行 Watch + HealthKit 真机验收。
+- 阶段 4：开发完成，LiveKit 和线上 token 接口已接通，等待两台 iPhone 做网络切换与后台语音验收。
+- 阶段 5：尚未开始。开始前需要 PostgreSQL、Sign in with Apple 和 APNs。
+- 阶段 6：尚未开始。
+
 ## 阶段 1：工程和静态原型
 
 目标：建立工程结构和主要界面。
@@ -83,12 +94,14 @@
 
 - 后端 LiveKit token endpoint 骨架。
 - iOS token 请求客户端。
+- Xcode target 已添加 LiveKit Swift SDK 2.x。
+- `VoiceRoomClient` 已使用 LiveKit `Room` 真实连接。
+- 已实现加入、退出、静音、成员状态和重连状态。
 
-待完成：
+待真机验收：
 
-- Xcode target 添加 LiveKit Swift SDK。
-- `VoiceRoomClient` 使用 LiveKit `Room` 真实连接。
-- 音频后台模式真机测试。
+- 两台 iPhone 同房间通话。
+- 锁屏、切后台、Wi-Fi/蜂窝网络切换后的语音恢复。
 
 ## 阶段 5：账号、好友和云同步
 
