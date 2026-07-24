@@ -8,6 +8,8 @@
 
 /* Begin PBXBuildFile section */
 		04462BFBF4350FD47998AA1C /* BikeGoGoWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = D789EC4B5EFC2034AF69D464 /* BikeGoGoWatch.app */; };
+		1A5500013014000000385B45 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 1A5500033014000000385B45 /* Assets.xcassets */; };
+		1A5500023014000000385B45 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 1A5500043014000000385B45 /* Assets.xcassets */; };
 		0967886FA63E9BD02750D76D /* WatchConnectivity.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6AF28AA8384C081A7E1A311A /* WatchConnectivity.framework */; };
 		1EDEC4791AD97A536EAEBA50 /* WatchRideView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA2F9917DE74AD1C088CAC0F /* WatchRideView.swift */; };
 		6FA2ABFE301312C000385B45 /* WatchSessionBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FA2ABF4301312BF00385B45 /* WatchSessionBridge.swift */; };
@@ -59,6 +61,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		1A5500033014000000385B45 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		1A5500043014000000385B45 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		18C5BD8F50E4D1CB9CD35DA8 /* BikeGoGoWatch.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = BikeGoGoWatch.entitlements; sourceTree = "<group>"; };
 		6AF28AA8384C081A7E1A311A /* WatchConnectivity.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WatchConnectivity.framework; path = System/Library/Frameworks/WatchConnectivity.framework; sourceTree = SDKROOT; };
 		6FA2ABD93013120600385B45 /* BikeGoGo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BikeGoGo.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -115,6 +119,7 @@
 		3A6DAD7741E1B290AC50645B /* BikeGoGoWatch */ = {
 			isa = PBXGroup;
 			children = (
+				1A5500043014000000385B45 /* Assets.xcassets */,
 				B03FCC2AC7B99FDA19FD4EAA /* BikeGoGoWatchApp.swift */,
 				BA2F9917DE74AD1C088CAC0F /* WatchRideView.swift */,
 				C544184F65397BBDBF5AD188 /* WatchSessionBridge.swift */,
@@ -206,6 +211,7 @@
 		6FA2ABFD301312BF00385B45 /* BikeGoGo */ = {
 			isa = PBXGroup;
 			children = (
+				1A5500033014000000385B45 /* Assets.xcassets */,
 				6FA2ABEF301312BF00385B45 /* Features */,
 				6FA2ABF5301312BF00385B45 /* Services */,
 				6FA2ABF9301312BF00385B45 /* Support */,
@@ -331,6 +337,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1A5500023014000000385B45 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -338,6 +345,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1A5500013014000000385B45 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
