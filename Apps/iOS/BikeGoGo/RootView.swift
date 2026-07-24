@@ -15,7 +15,7 @@ struct RootView: View {
 
             FriendsView()
                 .tabItem {
-                    Label("好友", systemImage: "person.2")
+                    Label("我的", systemImage: "person.crop.circle")
                 }
 
             RideHistoryView()
@@ -25,4 +25,3 @@ struct RootView: View {
         }
     }
 }
-

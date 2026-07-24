@@ -1,81 +1,34 @@
-import cors from "@fastify/cors";
 import dotenv from "dotenv";
-import Fastify from "fastify";
-import { AccessToken } from "livekit-server-sdk";
 import { z } from "zod";
 
+import { createApp } from "./app.js";
+
 dotenv.config();
+
+const liveKitCredential = (name: string) =>
+  z.string()
+    .min(1)
+    .refine(
+      (value) => !value.startsWith("your_"),
+      `${name} still contains a placeholder value`
+    );
 
 const envSchema = z.object({
   PORT: z.coerce.number().default(8080),
   LIVEKIT_URL: z.string().url(),
-  LIVEKIT_API_KEY: z.string().min(1),
-  LIVEKIT_API_SECRET: z.string().min(1),
-  ALLOWED_ORIGINS: z.string().default("")
+  LIVEKIT_API_KEY: liveKitCredential("LIVEKIT_API_KEY"),
+  LIVEKIT_API_SECRET: liveKitCredential("LIVEKIT_API_SECRET"),
+  ALLOWED_ORIGINS: z.string().default(""),
+  DATA_FILE: z.string().default("./data/bikegogogo.json")
 });
 
 const env = envSchema.parse(process.env);
-const app = Fastify({ logger: true });
-
-await app.register(cors, {
-  origin: env.ALLOWED_ORIGINS
-    ? env.ALLOWED_ORIGINS.split(",").map((origin) => origin.trim())
-    : true
-});
-
-app.get("/health", async () => ({
-  ok: true,
-  service: "bikegogogo-server"
-}));
-
-const tokenRequestSchema = z.object({
-  identity: z.string().min(1).max(80),
-  displayName: z.string().min(1).max(80),
-  canPublish: z.boolean().default(true),
-  canSubscribe: z.boolean().default(true)
-});
-
-app.post("/v1/voice/rooms/:groupId/token", async (request, reply) => {
-  const params = z.object({ groupId: z.string().min(1).max(80) }).parse(request.params);
-  const body = tokenRequestSchema.parse(request.body);
-  const roomName = `group-${params.groupId}`;
-
-  const token = new AccessToken(env.LIVEKIT_API_KEY, env.LIVEKIT_API_SECRET, {
-    identity: body.identity,
-    name: body.displayName,
-    ttl: "2h"
-  });
-
-  token.addGrant({
-    room: roomName,
-    roomJoin: true,
-    canPublish: body.canPublish,
-    canSubscribe: body.canSubscribe,
-    canPublishData: true,
-    canUpdateOwnMetadata: true
-  });
-
-  return reply.send({
-    url: env.LIVEKIT_URL,
-    token: await token.toJwt(),
-    roomName
-  });
-});
-
-app.setErrorHandler((error, request, reply) => {
-  request.log.error(error);
-
-  if (error instanceof z.ZodError) {
-    return reply.status(400).send({
-      error: "invalid_request",
-      details: error.flatten()
-    });
-  }
-
-  return reply.status(500).send({
-    error: "internal_server_error"
-  });
+const app = await createApp({
+  livekitUrl: env.LIVEKIT_URL,
+  livekitApiKey: env.LIVEKIT_API_KEY,
+  livekitApiSecret: env.LIVEKIT_API_SECRET,
+  allowedOrigins: env.ALLOWED_ORIGINS,
+  dataFile: env.DATA_FILE
 });
 
 await app.listen({ port: env.PORT, host: "0.0.0.0" });
-

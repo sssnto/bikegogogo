@@ -13,7 +13,8 @@ struct VoiceTokenService {
     func token(
         groupID: String,
         identity: String,
-        displayName: String
+        displayName: String,
+        accessToken: String?
     ) async throws -> VoiceTokenResponse {
         let endpoint = baseURL
             .appending(path: "v1")
@@ -25,6 +26,9 @@ struct VoiceTokenService {
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let accessToken {
+            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        }
         request.httpBody = try JSONEncoder().encode([
             "identity": identity,
             "displayName": displayName
@@ -43,4 +47,3 @@ struct VoiceTokenService {
 enum VoiceTokenError: Error {
     case requestFailed
 }
-

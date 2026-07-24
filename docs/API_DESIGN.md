@@ -2,21 +2,53 @@
 
 ## 鉴权
 
-MVP 可先使用 Apple 登录，后端签发自己的 JWT。
+Apple Developer Program 审核期间，MVP 使用设备绑定的访客账户。服务端只保存
+`deviceId` 的 SHA-256 摘要，并返回随机访问令牌。后续接入 Apple 登录时，保留用户 ID、
+好友码和好友关系，将访客账户绑定到 Apple 身份。
 
 ```http
-POST /v1/auth/apple
+POST /v1/auth/guest
+Content-Type: application/json
+```
+
+```json
+{
+  "deviceId": "设备内持久化的 UUID",
+  "displayName": "骑友-A1B2"
+}
 ```
 
 响应：
 
 ```json
 {
-  "accessToken": "jwt",
+  "accessToken": "随机会话令牌",
   "user": {
-    "id": "user_123",
-    "displayName": "Peng"
+    "id": "usr_...",
+    "displayName": "骑友-A1B2",
+    "friendCode": "K7M2P9QX"
   }
+}
+```
+
+除访客登录和健康检查外，账户相关接口需要：
+
+```http
+Authorization: Bearer <accessToken>
+```
+
+当前用户：
+
+```http
+GET /v1/me
+PATCH /v1/me
+```
+
+修改昵称请求：
+
+```json
+{
+  "displayName": "周末骑手"
 }
 ```
 
@@ -29,6 +61,17 @@ POST /v1/friends/requests/{requestId}/accept
 POST /v1/friends/requests/{requestId}/reject
 GET /v1/friends
 ```
+
+发起申请：
+
+```json
+{
+  "friendCode": "K7M2P9QX"
+}
+```
+
+好友关系只有在接收方调用 `accept` 后建立。双方同时向对方发起申请时，第二次申请会自动
+完成双向同意。
 
 ## 小队
 
@@ -45,7 +88,11 @@ DELETE /v1/groups/{groupId}/members/{userId}
 
 ```http
 POST /v1/voice/rooms/{groupId}/token
+Authorization: Bearer <accessToken>
 ```
+
+已登录客户端不需要提交 `identity` 和 `displayName`，后端会使用当前账户。旧版客户端仍可
+在请求体中提交这两个字段。
 
 响应：
 
@@ -82,4 +129,3 @@ GET /v1/rides/{rideId}
   ]
 }
 ```
-

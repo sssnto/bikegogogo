@@ -47,6 +47,7 @@ LIVEKIT_URL=wss://bikegogo-qy7s1sfz.livekit.cloud
 LIVEKIT_API_KEY=your_livekit_api_key
 LIVEKIT_API_SECRET=your_livekit_api_secret
 ALLOWED_ORIGINS=
+DATA_FILE=/data/bikegogogo.json
 ```
 
 注意：
@@ -69,6 +70,8 @@ docker run -d \
   -e LIVEKIT_API_KEY=your_livekit_api_key \
   -e LIVEKIT_API_SECRET=your_livekit_api_secret \
   -e ALLOWED_ORIGINS= \
+  -e DATA_FILE=/data/bikegogogo.json \
+  -v bikegogogo-data:/data \
   ghcr.io/<你的 GitHub 用户名小写>/bikegogogo-server:latest
 ```
 
@@ -100,7 +103,7 @@ cp .env.example .env
 ```yaml
 services:
   bikegogogo-server:
-    image: ghcr.io/sssnto/bikegogogo-server:v0.1.0
+    image: ghcr.io/sssnto/bikegogogo-server:latest
     container_name: bikegogogo-server
     restart: unless-stopped
     ports:
@@ -112,6 +115,12 @@ services:
       LIVEKIT_API_KEY: "${LIVEKIT_API_KEY}"
       LIVEKIT_API_SECRET: "${LIVEKIT_API_SECRET}"
       ALLOWED_ORIGINS: ""
+      DATA_FILE: "/data/bikegogogo.json"
+    volumes:
+      - bikegogogo-data:/data
+
+volumes:
+  bikegogogo-data:
 ```
 
 同目录 `.env`：
@@ -131,8 +140,12 @@ docker compose up -d
 
 ```bash
 docker compose pull
-docker compose up -d
+docker compose up -d --force-recreate
 ```
+
+`bikegogogo-data` 是用户资料、好友申请和好友关系的数据卷。升级或重建容器时不要删除
+这个卷，也不要执行 `docker compose down -v`。备份可通过 NAS 的 Docker 卷备份功能，
+或暂停容器后备份卷内的 `bikegogogo.json`。
 
 ## 对外暴露的服务
 
@@ -189,11 +202,28 @@ GET /health
 - 反向代理探活。
 - GitHub Actions 或后续监控探活。
 
+### 访客账户和好友
+
+```http
+POST  /v1/auth/guest
+GET   /v1/me
+PATCH /v1/me
+GET   /v1/friends
+GET   /v1/friends/requests
+POST  /v1/friends/requests
+POST  /v1/friends/requests/{requestId}/accept
+POST  /v1/friends/requests/{requestId}/reject
+```
+
+除 `POST /v1/auth/guest` 外，这些接口都要求
+`Authorization: Bearer <accessToken>`。完整请求示例见 `docs/API_DESIGN.md`。
+
 ### 获取 LiveKit 语音房间 Token
 
 ```http
 POST /v1/voice/rooms/{groupId}/token
 Content-Type: application/json
+Authorization: Bearer <accessToken>
 ```
 
 请求：
@@ -219,7 +249,8 @@ Content-Type: application/json
 
 当前 MVP 注意事项：
 
-- 这个接口暂时还没有用户鉴权，内测前需要补 Apple 登录/JWT。
+- 新版 iOS 使用访客账户鉴权，后端从会话读取语音身份。
+- 为兼容旧版 iOS，无 Authorization 时仍可在请求体传 `identity` 和 `displayName`。
 - 生产公网暴露前建议加 HTTPS、限流、鉴权和日志脱敏。
 - `groupId` 会映射为 LiveKit room：`group-{groupId}`。
 

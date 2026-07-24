@@ -22,6 +22,7 @@ final class AppState: ObservableObject {
     private let rideStore = LocalRideStore()
     let rideRecorder = LocationRideRecorder()
     let voiceClient = VoiceRoomClient()
+    let accountClient = AccountClient()
     let watchBridge = WatchSessionBridge()
     private let localUserID: String
     private let localDisplayName: String
@@ -73,6 +74,13 @@ final class AppState: ObservableObject {
                 self?.objectWillChange.send()
             }
             .store(in: &cancellables)
+
+        accountClient.objectWillChange
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.objectWillChange.send()
+            }
+            .store(in: &cancellables)
     }
 
     func bootstrap() async {
@@ -104,6 +112,7 @@ final class AppState: ObservableObject {
             )
         }
 
+        await accountClient.bootstrap(defaultDisplayName: localDisplayName)
         await loadStoredRides()
         watchBridge.activate()
     }
@@ -230,8 +239,9 @@ final class AppState: ObservableObject {
     func joinVoiceRoom() async {
         await voiceClient.join(
             groupID: group.id.uuidString,
-            identity: localUserID,
-            displayName: localDisplayName
+            identity: accountClient.currentUser?.id ?? localUserID,
+            displayName: accountClient.currentUser?.displayName ?? localDisplayName,
+            accessToken: accountClient.accessToken
         )
         voiceRoom.isJoined = voiceClient.isConnected
     }

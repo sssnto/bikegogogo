@@ -1,6 +1,6 @@
 services:
   bikegogogo-server:
-    image: ghcr.io/sssnto/bikegogogo-server:v0.1.0
+    image: ghcr.io/sssnto/bikegogogo-server:latest
     container_name: bikegogogo-server
     restart: unless-stopped
     ports:
@@ -12,6 +12,9 @@ services:
       LIVEKIT_API_KEY: "${LIVEKIT_API_KEY}"
       LIVEKIT_API_SECRET: "${LIVEKIT_API_SECRET}"
       ALLOWED_ORIGINS: "${ALLOWED_ORIGINS:-}"
+      DATA_FILE: "/data/bikegogogo.json"
+    volumes:
+      - bikegogogo-data:/data
     healthcheck:
       test:
         [
@@ -25,3 +28,5 @@ services:
       retries: 3
       start_period: 10s
 
+volumes:
+  bikegogogo-data:

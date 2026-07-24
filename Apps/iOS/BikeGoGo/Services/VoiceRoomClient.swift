@@ -39,7 +39,12 @@ final class VoiceRoomClient: NSObject, ObservableObject, RoomDelegate, @unchecke
     private let tokenService = VoiceTokenService()
     private lazy var room = Room(delegate: self)
 
-    func join(groupID: String, identity: String, displayName: String) async {
+    func join(
+        groupID: String,
+        identity: String,
+        displayName: String,
+        accessToken: String?
+    ) async {
         guard status == .disconnected else { return }
 
         status = .connecting
@@ -49,7 +54,8 @@ final class VoiceRoomClient: NSObject, ObservableObject, RoomDelegate, @unchecke
             let response = try await tokenService.token(
                 groupID: groupID,
                 identity: identity,
-                displayName: displayName
+                displayName: displayName,
+                accessToken: accessToken
             )
             latestTokenResponse = response
 

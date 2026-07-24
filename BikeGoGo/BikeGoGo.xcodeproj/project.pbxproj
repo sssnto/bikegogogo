@@ -26,6 +26,7 @@
 		6FA2AC0B301312C000385B45 /* AppConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FA2ABF6301312BF00385B45 /* AppConfiguration.swift */; };
 		6FA2AC0F3013216600385B45 /* BikeGoGoCore in Frameworks */ = {isa = PBXBuildFile; productRef = 6FA2AC0E3013216600385B45 /* BikeGoGoCore */; };
 		6FA2AC123013216600385B45 /* LiveKit in Frameworks */ = {isa = PBXBuildFile; productRef = 6FA2AC113013216600385B45 /* LiveKit */; };
+		A1CC00013013200000385B45 /* AccountClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1CC00023013200000385B45 /* AccountClient.swift */; };
 		9274A00DA9BDA00C5E70DCFE /* WatchSessionBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = C544184F65397BBDBF5AD188 /* WatchSessionBridge.swift */; };
 		9DD91701B7521C63CAC55E72 /* HealthKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A09BBFDAAB874D33AB3AA0A6 /* HealthKit.framework */; };
 		A8855BA16382BA269B33C0B7 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 71EC0EB53A7BDC4854D82F65 /* Foundation.framework */; };
@@ -77,6 +78,7 @@
 		6FA2ABFA301312BF00385B45 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
 		6FA2ABFB301312BF00385B45 /* BikeGoGoApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BikeGoGoApp.swift; sourceTree = "<group>"; };
 		6FA2ABFC301312BF00385B45 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		A1CC00023013200000385B45 /* AccountClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountClient.swift; sourceTree = "<group>"; };
 		71EC0EB53A7BDC4854D82F65 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/WatchOS.platform/Developer/SDKs/WatchOS11.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		A09BBFDAAB874D33AB3AA0A6 /* HealthKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = HealthKit.framework; path = System/Library/Frameworks/HealthKit.framework; sourceTree = SDKROOT; };
 		A51D40E731FD4D25B923D101 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -183,6 +185,7 @@
 			children = (
 				6FA2ABF0301312BF00385B45 /* LocalRideStore.swift */,
 				6FA2ABF1301312BF00385B45 /* LocationRideRecorder.swift */,
+				A1CC00023013200000385B45 /* AccountClient.swift */,
 				6FA2ABF2301312BF00385B45 /* VoiceRoomClient.swift */,
 				6FA2ABF3301312BF00385B45 /* VoiceTokenService.swift */,
 				6FA2ABF4301312BF00385B45 /* WatchSessionBridge.swift */,
@@ -359,6 +362,7 @@
 				6FA2AC09301312C000385B45 /* RideHistoryView.swift in Sources */,
 				6FA2AC0A301312C000385B45 /* FriendsView.swift in Sources */,
 				6FA2AC0B301312C000385B45 /* AppConfiguration.swift in Sources */,
+				A1CC00013013200000385B45 /* AccountClient.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
