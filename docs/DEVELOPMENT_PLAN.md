@@ -9,7 +9,7 @@
 - 阶段 3：开发完成，iPhone 可唤醒 Watch 并自动开始户外单车训练，等待双真机验收。
 - 阶段 4：开发完成，LiveKit 和线上 token 接口已接通，等待两台 iPhone 做网络切换与后台语音验收。
 - 阶段 5：主体功能完成。账号、好友、小队、多人语音鉴权和骑行云同步已完成；
-  APNs 社交通知已完成，PostgreSQL 生产迁移待下一批开发。
+  APNs 社交通知和 PostgreSQL 生产迁移已完成。
 - 阶段 6：尚未开始。
 
 ## 阶段 1：工程和静态原型
@@ -131,12 +131,15 @@
 - APNs Sandbox 已接入：iOS 自动绑定/解绑 device token，好友申请、申请通过和小队邀请
   支持通知，失效 token 会自动清理。
 - 服务端 JSON 数据格式已迁移到 v4，新增按账号及 APNs 环境隔离的推送 token。
+- PostgreSQL 16 已接管主存储，旧 JSON 会首次自动导入并保留不可覆盖的迁移前备份。
+- 所有写操作使用数据库原子更新和版本冲突检测，JSON 继续作为滚动镜像供备份与回滚。
+- 健康检查会验证数据库连接并报告当前存储后端；CI 使用真实 PostgreSQL 16 验证迁移和重启。
 
 下一步：
 
-- PostgreSQL 16 数据层迁移，替代当前适合小规模真机测试的单文件存储。
 - 创建 APNs Production Key，为 TestFlight 和 App Store 构建启用生产推送。
 - 多台 iPhone 的语音、云同步冲突和长距离路线容量验收。
+- TestFlight 扩大内测后，将 PostgreSQL 单行 JSONB 状态逐步拆分为规范化业务表。
 
 验收：
 

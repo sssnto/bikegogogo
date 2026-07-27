@@ -118,8 +118,8 @@ TestFlight 前还需要创建 Production APNs Key，并把 NAS 环境切换为 `
 - 骑行记录。
 - 轨迹点索引。
 
-建议优先级：扩大内测前必须。当前版本已经用 NAS Docker 数据卷中的 JSON 文件提供
-可用的骑行云同步，适合少量账号真机联调；并发用户和轨迹数据增加前需要迁移到数据库。
+建议优先级：扩大内测前必须。当前版本已由 PostgreSQL 16 接管主存储，首次启动会自动
+导入 NAS Docker 数据卷中的旧 JSON，并继续写入 JSON 镜像用于备份和紧急回滚。
 
 NAS Compose 已包含 PostgreSQL 16 容器、健康检查和独立数据卷，并且没有映射数据库
 端口。后端容器可通过下面的内部地址访问：
@@ -127,6 +127,9 @@ NAS Compose 已包含 PostgreSQL 16 容器、健康检查和独立数据卷，�
 ```text
 DATABASE_URL=postgresql://bikegogogo:<强密码>@postgres:5432/bikegogogo
 ```
+
+目前使用带事务和版本冲突检测的单行 JSONB 状态，适合小规模 TestFlight 内测。扩大
+用户量后再按用户、好友关系、小队、骑行和轨迹点拆分为规范化数据表。
 
 也可以使用托管服务：
 

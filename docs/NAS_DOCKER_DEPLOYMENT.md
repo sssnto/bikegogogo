@@ -68,8 +68,8 @@ APNS_KEY_PATH=/run/secrets/apns-private-key.p8
 - `APPLE_BUNDLE_ID` 必须与 iOS target 的 Product Bundle Identifier 完全一致。
 - Apple 身份公钥由服务端从 Apple 官方 JWKS 自动读取，不需要在 NAS 保存 Apple 私钥。
 - PostgreSQL 不映射宿主机端口，只允许同一 Compose 网络中的后端访问。
-- 当前 API 仍从 `bikegogogo.json` 读取数据；PostgreSQL 已就绪，但要等数据迁移版本发布
-  后才会成为主存储。
+- 配置 `DATABASE_URL` 后，PostgreSQL 是主存储；服务端会继续更新
+  `/data/bikegogogo.json`，作为便于检查和紧急回滚的镜像。
 - APNs `.p8` 通过只读文件挂载，不能写入 `.env` 或提交到 GitHub。
 
 ## Docker Run 部署
@@ -217,20 +217,85 @@ docker compose ps
 
 `bikegogogo-postgres` 应显示 `healthy`，`bikegogogo-server` 随后才会启动。
 
-升级：
+## 从 JSON 升级到 PostgreSQL
+
+本版本会自动完成首次迁移，不需要手工导入 SQL：
+
+1. PostgreSQL 中还没有 `bikegogogo_app_state` 数据时，服务端读取现有
+   `/data/bikegogogo.json`。
+2. 原文件复制为 `/data/bikegogogo.json.pre-postgresql.json`。这个文件只创建一次，
+   后续启动不会覆盖。
+3. 用户、会话、好友、小队、骑行和推送 token 整体写入 PostgreSQL。
+4. 之后 PostgreSQL 成为唯一读取来源；每次成功写入数据库后同步更新 JSON 镜像。
+5. 如果配置了 `DATABASE_URL` 但数据库不可用，服务端会启动失败，不会静默使用旧 JSON，
+   避免两个数据源分别继续写入。
+
+第一次升级前，先在 `deploy/nas` 目录创建独立备份：
+
+```bash
+mkdir -p backups
+docker compose cp bikegogogo-server:/data/bikegogogo.json \
+  "./backups/bikegogogo-before-postgresql-$(date +%Y%m%d-%H%M%S).json"
+docker compose exec -T postgres sh -c \
+  'pg_dump -Fc -U "$POSTGRES_USER" "$POSTGRES_DB"' \
+  > "./backups/postgresql-before-upgrade-$(date +%Y%m%d-%H%M%S).dump"
+```
+
+然后升级：
 
 ```bash
 docker compose pull
 docker compose up -d --force-recreate
+docker compose ps
+docker compose logs --tail=100 bikegogogo-server
 ```
 
-`bikegogogo-data` 是用户、会话、好友、小队和完整骑行轨迹的数据卷。升级或重建容器时
-不要删除这个卷，也不要执行 `docker compose down -v`。随着真机骑行数据增加，应设置
-定期备份；可通过 NAS 的 Docker 卷备份功能，或暂停容器后备份卷内的
-`bikegogogo.json`。
+验收健康状态：
 
-`bikegogogo-postgres` 是 PostgreSQL 数据卷，也必须一起备份。数据库接管主存储前，
-不要删除 JSON 数据卷；迁移完成并验收后仍建议保留一段时间作为回滚备份。
+```bash
+curl https://bikegogogo-server.sssnto.cn:8443/health
+docker compose exec bikegogogo-server \
+  ls -l /data/bikegogogo.json /data/bikegogogo.json.pre-postgresql.json
+docker compose exec -T postgres sh -c \
+  'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c \
+  "SELECT revision,
+          jsonb_array_length(payload->'\''users'\'') AS users,
+          jsonb_array_length(payload->'\''pushTokens'\'') AS push_tokens,
+          updated_at
+   FROM bikegogogo_app_state;"'
+```
+
+健康接口应返回 `"storage":"postgresql"`，数据库查询应至少保留你当前的 1 个 push
+token。随后在 iPhone 上打开“我的”和“好友”，确认账户、好友码和已有数据正常，再编辑一次
+昵称并重启容器，确认修改仍然存在。
+
+### 日常备份
+
+`bikegogogo-postgres` 现在是主数据卷，`bikegogogo-data` 是 JSON 镜像和导入前备份。
+两个卷都必须备份。除 NAS 的卷快照外，建议每天执行一次逻辑备份：
+
+```bash
+docker compose exec -T postgres sh -c \
+  'pg_dump -Fc -U "$POSTGRES_USER" "$POSTGRES_DB"' \
+  > "./backups/postgresql-$(date +%Y%m%d-%H%M%S).dump"
+docker compose cp bikegogogo-server:/data/bikegogogo.json \
+  "./backups/bikegogogo-$(date +%Y%m%d-%H%M%S).json"
+```
+
+升级或重建容器时不要删除这两个卷，也不要执行 `docker compose down -v`。
+
+### 紧急回滚到 JSON
+
+如果新版本数据库路径出现问题：
+
+1. 执行 `docker compose stop bikegogogo-server`。
+2. 暂时从 `docker-compose.yml` 的服务端环境变量中删除 `DATABASE_URL`。
+3. 执行 `docker compose up -d --force-recreate bikegogogo-server`。
+4. `/health` 返回 `"storage":"json"` 后检查 iPhone 数据。
+
+服务端会使用最后一次成功写入后的 JSON 镜像。不要删除 PostgreSQL 卷；排查完成后恢复
+`DATABASE_URL` 并重新启动，即可重新使用数据库中的主数据。
+
 
 ## 对外暴露的服务
 
@@ -277,7 +342,8 @@ GET /health
 ```json
 {
   "ok": true,
-  "service": "bikegogogo-server"
+  "service": "bikegogogo-server",
+  "storage": "postgresql"
 }
 ```
 
@@ -358,9 +424,11 @@ Authorization: Bearer <accessToken>
 - 服务端仅保存访问令牌、设备 ID 的 SHA-256 摘要；iOS 原始令牌存入 Keychain。
 - LiveKit API Secret 只留在 NAS，iOS 获得的是 2 小时有效的房间 JWT。
 - `GET /health` 保持公开，其余业务接口按上述规则鉴权。
-- 当前 JSON 数据卷包含路线和账号信息，应纳入 NAS 加密备份；不要把数据卷暴露为网络共享。
+- PostgreSQL 和 JSON 镜像都包含路线、账号、会话和推送 token，应纳入 NAS 加密备份；
+  不要把数据卷暴露为网络共享。
 - APNs 只需要容器主动访问 Apple 的 TCP `443`，不新增任何公网入站端口。
-- 当前只适合小规模内测；扩大用户量前迁移 PostgreSQL，数据库只留在 Docker 内部网络。
+- 当前数据库状态使用 PostgreSQL 的事务与版本号保护，但仍是单行 JSONB 模型，适合小规模
+  TestFlight 内测；扩大用户量前再按用户、关系和骑行记录拆分为规范化数据表。
 
 ## 反向代理建议
 

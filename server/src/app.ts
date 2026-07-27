@@ -29,6 +29,7 @@ export type AppConfig = {
   livekitApiSecret: string;
   allowedOrigins: string;
   dataFile: string;
+  databaseUrl?: string;
   appleBundleId: string;
   sessionTTLDays: number;
   appleIdentityVerifier?: AppleIdentityVerifier;
@@ -83,11 +84,16 @@ export async function createApp(config: AppConfig) {
   const app = Fastify({ logger: true, bodyLimit: 15 * 1024 * 1024 });
   const store = new DataStore(
     config.dataFile,
-    config.sessionTTLDays * 24 * 60 * 60 * 1000
+    config.sessionTTLDays * 24 * 60 * 60 * 1000,
+    config.databaseUrl
   );
   const verifyAppleIdentity = config.appleIdentityVerifier
     ?? createAppleIdentityVerifier(config.appleBundleId);
   await store.initialize();
+  app.log.info({ storage: store.storageBackend }, "Data store initialized");
+  app.addHook("onClose", async () => {
+    await store.close();
+  });
 
   await app.register(cors, {
     origin: config.allowedOrigins
@@ -146,10 +152,23 @@ export async function createApp(config: AppConfig) {
     }
   };
 
-  app.get("/health", async () => ({
-    ok: true,
-    service: "bikegogogo-server"
-  }));
+  app.get("/health", async (_request, reply) => {
+    try {
+      await store.healthCheck();
+      return {
+        ok: true,
+        service: "bikegogogo-server",
+        storage: store.storageBackend
+      };
+    } catch (error) {
+      app.log.error({ err: error }, "Data store health check failed");
+      return reply.status(503).send({
+        ok: false,
+        service: "bikegogogo-server",
+        storage: store.storageBackend
+      });
+    }
+  });
 
   const guestAuthSchema = z.object({
     deviceId: z.string().min(16).max(128),

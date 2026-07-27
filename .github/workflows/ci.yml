@@ -33,6 +33,22 @@ jobs:
   server:
     name: Server typecheck and build
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: bikegogogo_test
+          POSTGRES_USER: bikegogogo
+          POSTGRES_PASSWORD: integration-test-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U bikegogogo -d bikegogogo_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql://bikegogogo:integration-test-password@127.0.0.1:5432/bikegogogo_test
 
     defaults:
       run:

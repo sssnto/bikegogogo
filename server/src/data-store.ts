@@ -1,6 +1,8 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { constants as fsConstants } from "node:fs";
+import { copyFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { Pool } from "pg";
 
 export type UserRecord = {
   id: string;
@@ -131,13 +133,25 @@ export class StoreError extends Error {
 export class DataStore {
   private state: DatabaseState = emptyState();
   private mutationQueue: Promise<void> = Promise.resolve();
+  private pool?: Pool;
+  private revision = 0;
 
   constructor(
     private readonly filePath: string,
-    private readonly sessionTTLMilliseconds = 30 * 24 * 60 * 60 * 1000
+    private readonly sessionTTLMilliseconds = 30 * 24 * 60 * 60 * 1000,
+    private readonly databaseUrl?: string
   ) {}
 
+  get storageBackend(): "json" | "postgresql" {
+    return this.pool ? "postgresql" : "json";
+  }
+
   async initialize(): Promise<void> {
+    if (this.databaseUrl) {
+      await this.initializePostgreSQL();
+      return;
+    }
+
     try {
       const data = await readFile(this.filePath, "utf8");
       this.state = this.migrate(JSON.parse(data) as Record<string, unknown>);
@@ -145,8 +159,19 @@ export class DataStore {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
         throw error;
       }
-      await this.persist();
+      await this.persistJSON();
     }
+  }
+
+  async healthCheck(): Promise<void> {
+    if (this.pool) {
+      await this.pool.query("SELECT 1");
+    }
+  }
+
+  async close(): Promise<void> {
+    await this.mutationQueue;
+    await this.pool?.end();
   }
 
   async signInGuest(
@@ -758,16 +783,184 @@ export class DataStore {
     });
 
     await previousMutation;
+    const previousState = structuredClone(this.state);
+    const previousRevision = this.revision;
     try {
       const result = await operation();
       await this.persist();
       return result;
+    } catch (error) {
+      this.state = previousState;
+      this.revision = previousRevision;
+      throw error;
     } finally {
       releaseMutation();
     }
   }
 
   private async persist(): Promise<void> {
+    if (this.pool) {
+      await this.persistPostgreSQL();
+      try {
+        await this.persistJSON();
+      } catch (error) {
+        console.error(
+          "PostgreSQL was updated, but the JSON mirror could not be written:",
+          error instanceof Error ? error.message : "unknown error"
+        );
+      }
+      return;
+    }
+
+    await this.persistJSON();
+  }
+
+  private async initializePostgreSQL(): Promise<void> {
+    this.pool = new Pool({
+      connectionString: this.databaseUrl,
+      max: 5,
+      connectionTimeoutMillis: 10_000,
+      idleTimeoutMillis: 30_000,
+      query_timeout: 5_000
+    });
+    this.pool.on("error", (error) => {
+      console.error(
+        "Unexpected PostgreSQL connection error:",
+        error.message
+      );
+    });
+
+    try {
+      await this.pool.query(`
+        CREATE TABLE IF NOT EXISTS bikegogogo_app_state (
+          singleton SMALLINT PRIMARY KEY CHECK (singleton = 1),
+          schema_version INTEGER NOT NULL,
+          revision BIGINT NOT NULL DEFAULT 0,
+          payload JSONB NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
+
+      const existing = await this.readPostgreSQLState();
+      if (existing) {
+        this.state = this.migrate(existing.payload);
+        this.revision = existing.revision;
+        if (existing.payload.version !== this.state.version) {
+          await this.persistPostgreSQL();
+        }
+        await this.writeJSONMirror();
+        return;
+      }
+
+      const imported = await this.readJSONState();
+      if (imported) {
+        await this.backupImportedJSON();
+        this.state = imported;
+      }
+
+      const inserted = await this.pool.query<{ revision: string }>(
+        `INSERT INTO bikegogogo_app_state
+          (singleton, schema_version, revision, payload)
+         VALUES (1, $1, 0, $2::jsonb)
+         ON CONFLICT (singleton) DO NOTHING
+         RETURNING revision`,
+        [this.state.version, JSON.stringify(this.state)]
+      );
+
+      if (inserted.rowCount === 1) {
+        this.revision = Number(inserted.rows[0].revision);
+      } else {
+        const concurrentState = await this.readPostgreSQLState();
+        if (!concurrentState) {
+          throw new Error("PostgreSQL state initialization failed");
+        }
+        this.state = this.migrate(concurrentState.payload);
+        this.revision = concurrentState.revision;
+      }
+
+      await this.writeJSONMirror();
+    } catch (error) {
+      await this.pool.end().catch(() => {});
+      this.pool = undefined;
+      throw error;
+    }
+  }
+
+  private async readPostgreSQLState(): Promise<{
+    payload: Record<string, unknown>;
+    revision: number;
+  } | undefined> {
+    const result = await this.pool!.query<{
+      payload: Record<string, unknown> | string;
+      revision: string;
+    }>(
+      `SELECT payload, revision
+       FROM bikegogogo_app_state
+       WHERE singleton = 1`
+    );
+    const row = result.rows[0];
+    if (!row) return undefined;
+    return {
+      payload: typeof row.payload === "string"
+        ? JSON.parse(row.payload) as Record<string, unknown>
+        : row.payload,
+      revision: Number(row.revision)
+    };
+  }
+
+  private async persistPostgreSQL(): Promise<void> {
+    const result = await this.pool!.query<{ revision: string }>(
+      `UPDATE bikegogogo_app_state
+       SET schema_version = $1,
+           revision = revision + 1,
+           payload = $2::jsonb,
+           updated_at = NOW()
+       WHERE singleton = 1 AND revision = $3
+       RETURNING revision`,
+      [this.state.version, JSON.stringify(this.state), this.revision]
+    );
+
+    if (result.rowCount !== 1) {
+      throw new Error(
+        "PostgreSQL state revision conflict; another server instance changed the data"
+      );
+    }
+    this.revision = Number(result.rows[0].revision);
+  }
+
+  private async readJSONState(): Promise<DatabaseState | undefined> {
+    try {
+      const data = await readFile(this.filePath, "utf8");
+      return this.migrate(JSON.parse(data) as Record<string, unknown>);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+      throw error;
+    }
+  }
+
+  private async backupImportedJSON(): Promise<void> {
+    const backupPath = `${this.filePath}.pre-postgresql.json`;
+    try {
+      await copyFile(this.filePath, backupPath, fsConstants.COPYFILE_EXCL);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+        throw error;
+      }
+    }
+  }
+
+  private async writeJSONMirror(): Promise<void> {
+    try {
+      await this.persistJSON();
+    } catch (error) {
+      console.error(
+        "PostgreSQL is ready, but the JSON mirror could not be written:",
+        error instanceof Error ? error.message : "unknown error"
+      );
+    }
+  }
+
+  private async persistJSON(): Promise<void> {
     await mkdir(path.dirname(this.filePath), { recursive: true });
     const temporaryPath = `${this.filePath}.${process.pid}.tmp`;
     await writeFile(temporaryPath, JSON.stringify(this.state, null, 2), {
