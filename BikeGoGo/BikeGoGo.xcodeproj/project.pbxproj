@@ -36,6 +36,8 @@
 		A1CC00073013200000385B45 /* HealthKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A09BBFDAAB874D33AB3AA0A6 /* HealthKit.framework */; };
 		A1CC00083013200000385B45 /* RideCloudClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1CC00093013200000385B45 /* RideCloudClient.swift */; };
 		A1CC000A3013200000385B45 /* PushNotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1CC000B3013200000385B45 /* PushNotificationManager.swift */; };
+		A1CC00103013300000385B45 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A1CC00123013300000385B45 /* PrivacyInfo.xcprivacy */; };
+		A1CC00113013300000385B45 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A1CC00133013300000385B45 /* PrivacyInfo.xcprivacy */; };
 		A8855BA16382BA269B33C0B7 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 71EC0EB53A7BDC4854D82F65 /* Foundation.framework */; };
 		E3DCA650B91494233E8C3D26 /* WatchWorkoutManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4D1E2FA168DF5900F97CDDA /* WatchWorkoutManager.swift */; };
 		FA1EB89CCD61D0C4C5E84150 /* BikeGoGoWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B03FCC2AC7B99FDA19FD4EAA /* BikeGoGoWatchApp.swift */; };
@@ -94,6 +96,8 @@
 		A1CC00063013200000385B45 /* WatchWorkoutLauncher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchWorkoutLauncher.swift; sourceTree = "<group>"; };
 		A1CC00093013200000385B45 /* RideCloudClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RideCloudClient.swift; sourceTree = "<group>"; };
 		A1CC000B3013200000385B45 /* PushNotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushNotificationManager.swift; sourceTree = "<group>"; };
+		A1CC00123013300000385B45 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		A1CC00133013300000385B45 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		A51D40E731FD4D25B923D101 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		B03FCC2AC7B99FDA19FD4EAA /* BikeGoGoWatchApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BikeGoGoWatchApp.swift; sourceTree = "<group>"; };
 		BA2F9917DE74AD1C088CAC0F /* WatchRideView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchRideView.swift; sourceTree = "<group>"; };
@@ -218,6 +222,7 @@
 				6FA2ABF6301312BF00385B45 /* AppConfiguration.swift */,
 				6FA2ABF7301312BF00385B45 /* BikeGoGo.entitlements */,
 				6FA2ABF8301312BF00385B45 /* Info.plist */,
+				A1CC00123013300000385B45 /* PrivacyInfo.xcprivacy */,
 			);
 			path = Support;
 			sourceTree = "<group>";
@@ -251,6 +256,7 @@
 			children = (
 				18C5BD8F50E4D1CB9CD35DA8 /* BikeGoGoWatch.entitlements */,
 				A51D40E731FD4D25B923D101 /* Info.plist */,
+				A1CC00133013300000385B45 /* PrivacyInfo.xcprivacy */,
 			);
 			path = Support;
 			sourceTree = "<group>";
@@ -351,6 +357,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				1A5500023014000000385B45 /* Assets.xcassets in Resources */,
+				A1CC00113013300000385B45 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -359,6 +366,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				1A5500013014000000385B45 /* Assets.xcassets in Resources */,
+				A1CC00103013300000385B45 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -420,7 +428,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = ../Apps/watchOS/BikeGoGoWatch/Support/BikeGoGoWatch.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = FR9RTRV9BC;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -566,9 +574,11 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				APS_ENVIRONMENT = development;
+				BIKEGOGO_PUSH_ENVIRONMENT = sandbox;
 				CODE_SIGN_ENTITLEMENTS = BikeGoGo/Support/BikeGoGo.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = FR9RTRV9BC;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -601,9 +611,11 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				APS_ENVIRONMENT = production;
+				BIKEGOGO_PUSH_ENVIRONMENT = production;
 				CODE_SIGN_ENTITLEMENTS = BikeGoGo/Support/BikeGoGo.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = FR9RTRV9BC;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -637,7 +649,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = ../Apps/watchOS/BikeGoGoWatch/Support/BikeGoGoWatch.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = FR9RTRV9BC;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;

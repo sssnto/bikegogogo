@@ -18,6 +18,11 @@ const liveKitCredential = (name: string) =>
       `${name} still contains a placeholder value`
     );
 
+const optionalNonEmptyString = z.preprocess(
+  (value) => value === "" ? undefined : value,
+  z.string().min(1).optional()
+);
+
 const envSchema = z.object({
   PORT: z.coerce.number().default(8080),
   LIVEKIT_URL: z.string().url(),
@@ -32,7 +37,10 @@ const envSchema = z.object({
   APNS_TEAM_ID: z.string().min(1).optional(),
   APNS_TOPIC: z.string().min(1).optional(),
   APNS_KEY_PATH: z.string().min(1).optional(),
-  APNS_ENVIRONMENT: z.enum(["sandbox", "production"]).default("sandbox")
+  APNS_ENVIRONMENT: z.enum(["sandbox", "production"]).default("sandbox"),
+  APNS_PRODUCTION_KEY_ID: optionalNonEmptyString,
+  APNS_PRODUCTION_KEY_PATH: z.string().min(1)
+    .default("/run/secrets/apns-production-key.p8")
 });
 
 const env = envSchema.parse(process.env);
@@ -49,15 +57,35 @@ if (apnsConfigured && apnsValues.some((value) => !value)) {
   );
 }
 
-let notificationSender: NotificationSender | undefined;
+const notificationSenders: NotificationSender[] = [];
 if (apnsConfigured) {
-  notificationSender = await createAPNsSender({
+  notificationSenders.push(await createAPNsSender({
     keyId: env.APNS_KEY_ID!,
     teamId: env.APNS_TEAM_ID!,
     topic: env.APNS_TOPIC!,
     privateKeyPath: env.APNS_KEY_PATH!,
     environment: env.APNS_ENVIRONMENT as APNsEnvironment
-  });
+  }));
+}
+
+if (env.APNS_PRODUCTION_KEY_ID) {
+  if (!env.APNS_TEAM_ID || !env.APNS_TOPIC) {
+    throw new Error(
+      "APNS_TEAM_ID and APNS_TOPIC are required with APNS_PRODUCTION_KEY_ID"
+    );
+  }
+  if (env.APNS_ENVIRONMENT === "production" && apnsConfigured) {
+    throw new Error(
+      "APNS_PRODUCTION_KEY_ID duplicates the production APNS_ENVIRONMENT"
+    );
+  }
+  notificationSenders.push(await createAPNsSender({
+    keyId: env.APNS_PRODUCTION_KEY_ID,
+    teamId: env.APNS_TEAM_ID,
+    topic: env.APNS_TOPIC,
+    privateKeyPath: env.APNS_PRODUCTION_KEY_PATH,
+    environment: "production"
+  }));
 }
 
 const app = await createApp({
@@ -69,7 +97,7 @@ const app = await createApp({
   databaseUrl: env.DATABASE_URL,
   appleBundleId: env.APPLE_BUNDLE_ID,
   sessionTTLDays: env.SESSION_TTL_DAYS,
-  notificationSender
+  notificationSenders
 });
 
 await app.listen({ port: env.PORT, host: "0.0.0.0" });

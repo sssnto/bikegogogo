@@ -13,7 +13,7 @@ import type {
 
 const configFor = (
   dataFile: string,
-  notificationSender?: NotificationSender
+  notificationSenders?: NotificationSender[]
 ) => ({
   livekitUrl: "wss://example.livekit.cloud",
   livekitApiKey: "API_TEST_KEY",
@@ -22,7 +22,7 @@ const configFor = (
   dataFile,
   appleBundleId: "com.sssnto.BikeGoGo",
   sessionTTLDays: 30,
-  notificationSender,
+  notificationSenders,
   appleIdentityVerifier: async (identityToken: string) => ({
     subject: identityToken.startsWith("b")
       ? "second-apple-user-subject"
@@ -34,15 +34,24 @@ const configFor = (
 test("push tokens receive friend and group notifications for their account", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "bikegogogo-test-"));
   const dataFile = path.join(directory, "data.json");
-  const deliveries: Array<{ tokens: string[]; notification: PushNotification }> = [];
-  const notificationSender: NotificationSender = {
-    environment: "sandbox",
+  const deliveries: Array<{
+    environment: "sandbox" | "production";
+    tokens: string[];
+    notification: PushNotification;
+  }> = [];
+  const sender = (
+    environment: "sandbox" | "production"
+  ): NotificationSender => ({
+    environment,
     async send(tokens, notification) {
-      deliveries.push({ tokens, notification });
+      deliveries.push({ environment, tokens, notification });
       return { invalidTokens: [], failedCount: 0 };
     }
-  };
-  const app = await createApp(configFor(dataFile, notificationSender));
+  });
+  const app = await createApp(configFor(dataFile, [
+    sender("sandbox"),
+    sender("production")
+  ]));
 
   try {
     const owner = (await app.inject({
@@ -84,6 +93,9 @@ test("push tokens receive friend and group notifications for their account", asy
     assert.equal(friendRequest.statusCode, 201);
     assert.deepEqual(deliveries[0].tokens, [memberToken]);
     assert.equal(deliveries[0].notification.event, "friend_request");
+    assert.equal(deliveries[0].environment, "sandbox");
+    assert.deepEqual(deliveries[1].tokens, ["c".repeat(64)]);
+    assert.equal(deliveries[1].environment, "production");
 
     const accepted = await app.inject({
       method: "POST",
@@ -91,8 +103,8 @@ test("push tokens receive friend and group notifications for their account", asy
       headers: { authorization: `Bearer ${member.accessToken}` }
     });
     assert.equal(accepted.statusCode, 200);
-    assert.deepEqual(deliveries[1].tokens, [ownerToken]);
-    assert.equal(deliveries[1].notification.event, "friend_accepted");
+    assert.deepEqual(deliveries[2].tokens, [ownerToken]);
+    assert.equal(deliveries[2].notification.event, "friend_accepted");
 
     const group = await app.inject({
       method: "POST",
@@ -107,8 +119,10 @@ test("push tokens receive friend and group notifications for their account", asy
       payload: { userId: member.user.id }
     });
     assert.equal(added.statusCode, 200);
-    assert.deepEqual(deliveries[2].tokens, [memberToken]);
-    assert.equal(deliveries[2].notification.event, "group_invitation");
+    assert.deepEqual(deliveries[3].tokens, [memberToken]);
+    assert.equal(deliveries[3].notification.event, "group_invitation");
+    assert.deepEqual(deliveries[4].tokens, ["c".repeat(64)]);
+    assert.equal(deliveries[4].environment, "production");
 
     const unregistered = await app.inject({
       method: "DELETE",
@@ -130,7 +144,8 @@ test("push tokens receive friend and group notifications for their account", asy
       headers: { authorization: `Bearer ${owner.accessToken}` },
       payload: { userId: member.user.id }
     });
-    assert.equal(deliveries.length, 3);
+    assert.equal(deliveries.length, 6);
+    assert.equal(deliveries[5].environment, "production");
   } finally {
     await app.close();
     await rm(directory, { recursive: true, force: true });

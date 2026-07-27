@@ -17,11 +17,10 @@ final class PushNotificationManager {
     private static let deviceTokenKey = "bikegogo.pushDeviceToken"
 
     private var environment: String {
-#if DEBUG
-        return "sandbox"
-#else
-        return "production"
-#endif
+        let configured = Bundle.main.object(
+            forInfoDictionaryKey: "BikeGoGoPushEnvironment"
+        ) as? String
+        return configured == "production" ? "production" : "sandbox"
     }
 
     private init(

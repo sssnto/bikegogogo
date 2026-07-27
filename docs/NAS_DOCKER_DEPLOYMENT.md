@@ -57,7 +57,9 @@ APNS_KEY_ID=CM2W9J6CX3
 APNS_TEAM_ID=FR9RTRV9BC
 APNS_TOPIC=com.sssnto.BikeGoGo
 APNS_ENVIRONMENT=sandbox
-APNS_KEY_PATH=/run/secrets/apns-private-key.p8
+APNS_KEY_PATH=/run/secrets/AuthKey_CM2W9J6CX3.p8
+APNS_PRODUCTION_KEY_ID=<Production Key ID，未准备时留空>
+APNS_PRODUCTION_KEY_PATH=/run/secrets/apns-production-key.p8
 ```
 
 注意：
@@ -163,10 +165,12 @@ services:
       APNS_TEAM_ID: "${APNS_TEAM_ID}"
       APNS_TOPIC: "${APNS_TOPIC}"
       APNS_ENVIRONMENT: "${APNS_ENVIRONMENT}"
-      APNS_KEY_PATH: "/run/secrets/apns-private-key.p8"
+      APNS_KEY_PATH: "/run/secrets/AuthKey_${APNS_KEY_ID}.p8"
+      APNS_PRODUCTION_KEY_ID: "${APNS_PRODUCTION_KEY_ID:-}"
+      APNS_PRODUCTION_KEY_PATH: "/run/secrets/apns-production-key.p8"
     volumes:
       - bikegogogo-data:/data
-      - "./secrets/AuthKey_${APNS_KEY_ID}.p8:/run/secrets/apns-private-key.p8:ro"
+      - "./secrets:/run/secrets:ro"
 
   postgres:
     image: postgres:16-alpine

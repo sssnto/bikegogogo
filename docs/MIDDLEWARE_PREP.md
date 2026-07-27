@@ -88,7 +88,8 @@ API Secret 只填到 `server/.env`，不要写进 iOS App。
 - 小队语音邀请。
 - 后续 VoIP 语音提醒。
 
-当前状态：Sandbox Key 与普通社交通知链路已完成，等待双真机验收。
+当前状态：Sandbox 与 Production 双通道代码、普通社交通知链路已完成，等待
+TestFlight 和双真机验收。
 
 当前配置：
 
@@ -96,7 +97,9 @@ API Secret 只填到 `server/.env`，不要写进 iOS App。
 - Key ID `CM2W9J6CX3`。
 - Team ID `FR9RTRV9BC`。
 
-TestFlight 前还需要创建 Production APNs Key，并把 NAS 环境切换为 `production`。
+TestFlight 前还需要创建 Production APNs Key，在 NAS 配置
+`APNS_PRODUCTION_KEY_ID` 和 `secrets/apns-production-key.p8`。Sandbox 与 Production
+会同时运行，不需要切换 NAS 的 `APNS_ENVIRONMENT`。
 
 `.p8` 私钥不要粘贴到聊天或提交到 Git，应通过 NAS secret 文件或受保护环境变量挂载。
 完整操作见 [APNs 私钥申请与保管](APNS_SETUP.md)。

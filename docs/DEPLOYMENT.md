@@ -66,8 +66,6 @@ Info.plist 需要配置：
 <string>BikeGoGo 需要读取心率和运动数据来展示骑行统计。</string>
 <key>NSHealthUpdateUsageDescription</key>
 <string>BikeGoGo 需要写入骑行记录到 Apple 健康。</string>
-<key>NSBluetoothAlwaysUsageDescription</key>
-<string>BikeGoGo 后续可连接踏频、功率等骑行蓝牙设备。</string>
 ```
 
 仓库已经提供模板：
@@ -216,19 +214,8 @@ APNs Key 的创建、下载和 NAS 保管步骤见 [APNs `.p8` 操作指南](APN
 
 ## 7. TestFlight
 
-1. Xcode 选择 Any iOS Device。
-2. Product > Archive。
-3. Organizer 中选择 Distribute App。
-4. 选择 App Store Connect。
-5. 上传后在 App Store Connect 创建 TestFlight 测试。
-6. 邀请好友邮箱加入测试。
-
-首次上传前还需要：
-
-1. 在 App Store Connect 创建 Bundle ID 为 `com.sssnto.BikeGoGo` 的 App。
-2. 为 Build 设置递增的 `CURRENT_PROJECT_VERSION`。
-3. 完成出口合规问答；当前 HTTPS/LiveKit 使用系统标准加密，通常选择不使用自定义加密。
-4. 内部测试员可直接邀请；外部测试员需要先通过 TestFlight Beta App Review。
+当前发布版本是 `1.0 (2)`。完整的 App Store Connect 建档、Production APNs、Archive、
+上传、内外部测试和故障排查步骤见 [TestFlight 发布手册](TESTFLIGHT_DEPLOYMENT.md)。
 
 ## 8. App Store 审核注意事项
 

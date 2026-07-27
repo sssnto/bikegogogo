@@ -10,7 +10,8 @@
 - 阶段 4：开发完成，LiveKit 和线上 token 接口已接通，等待两台 iPhone 做网络切换与后台语音验收。
 - 阶段 5：主体功能完成。账号、好友、小队、多人语音鉴权和骑行云同步已完成；
   APNs 社交通知和 PostgreSQL 生产迁移已完成。
-- 阶段 6：尚未开始。
+- 阶段 6：进行中。Release 推送环境、隐私清单、版本号和 TestFlight 发布资料已完成，
+  等待首次 Archive 上传及 TestFlight 真机验收。
 
 ## 阶段 1：工程和静态原型
 
@@ -128,8 +129,8 @@
 - 小队创建、好友邀请、成员移出/退出、解散和小队多人语音。
 - 完成骑行后自动上传；启动、手动刷新时同步账号历史；支持云端删除。
 - 公网接口已增加全局及登录/语音专项限流。
-- APNs Sandbox 已接入：iOS 自动绑定/解绑 device token，好友申请、申请通过和小队邀请
-  支持通知，失效 token 会自动清理。
+- APNs Sandbox 与 Production 双通道已接入：Debug 和 TestFlight/App Store 自动使用
+  对应环境，iOS 自动绑定/解绑 device token，失效 token 会自动清理。
 - 服务端 JSON 数据格式已迁移到 v4，新增按账号及 APNs 环境隔离的推送 token。
 - PostgreSQL 16 已接管主存储，旧 JSON 会首次自动导入并保留不可覆盖的迁移前备份。
 - 所有写操作使用数据库原子更新和版本冲突检测，JSON 继续作为滚动镜像供备份与回滚。
@@ -137,7 +138,7 @@
 
 下一步：
 
-- 创建 APNs Production Key，为 TestFlight 和 App Store 构建启用生产推送。
+- 在 NAS 配置 APNs Production Key，并上传首个 TestFlight 构建。
 - 多台 iPhone 的语音、云同步冲突和长距离路线容量验收。
 - TestFlight 扩大内测后，将 PostgreSQL 单行 JSONB 状态逐步拆分为规范化业务表。
 
@@ -151,8 +152,8 @@
 
 目标：提交 App Store 审核。
 
-- 完成隐私政策。
-- 完成权限说明。
-- 完成 App Store 截图和描述。
+- 发布隐私政策到公网 URL。
+- 隐私清单和权限说明已完成。
+- TestFlight 元数据已完成，待制作 App Store 截图。
 - 处理后台定位、HealthKit、麦克风审核说明。
 - 崩溃和日志收集。

@@ -23,10 +23,12 @@ services:
       APNS_TEAM_ID: "${APNS_TEAM_ID:?set APNS_TEAM_ID in deploy/nas/.env}"
       APNS_TOPIC: "${APNS_TOPIC:-com.sssnto.BikeGoGo}"
       APNS_ENVIRONMENT: "${APNS_ENVIRONMENT:-sandbox}"
-      APNS_KEY_PATH: "/run/secrets/apns-private-key.p8"
+      APNS_KEY_PATH: "/run/secrets/AuthKey_${APNS_KEY_ID:?set APNS_KEY_ID in deploy/nas/.env}.p8"
+      APNS_PRODUCTION_KEY_ID: "${APNS_PRODUCTION_KEY_ID:-}"
+      APNS_PRODUCTION_KEY_PATH: "/run/secrets/apns-production-key.p8"
     volumes:
       - bikegogogo-data:/data
-      - "./secrets/AuthKey_${APNS_KEY_ID:?set APNS_KEY_ID in deploy/nas/.env}.p8:/run/secrets/apns-private-key.p8:ro"
+      - "./secrets:/run/secrets:ro"
     healthcheck:
       test:
         [

@@ -33,7 +33,7 @@ export type AppConfig = {
   appleBundleId: string;
   sessionTTLDays: number;
   appleIdentityVerifier?: AppleIdentityVerifier;
-  notificationSender?: NotificationSender;
+  notificationSenders?: NotificationSender[];
 };
 
 const publicUser = (user: UserRecord) => ({
@@ -89,6 +89,7 @@ export async function createApp(config: AppConfig) {
   );
   const verifyAppleIdentity = config.appleIdentityVerifier
     ?? createAppleIdentityVerifier(config.appleBundleId);
+  const notificationSenders = config.notificationSenders ?? [];
   await store.initialize();
   app.log.info({ storage: store.storageBackend }, "Data store initialized");
   app.addHook("onClose", async () => {
@@ -130,26 +131,34 @@ export async function createApp(config: AppConfig) {
     userId: string,
     notification: PushNotification
   ): Promise<void> => {
-    const sender = config.notificationSender;
-    if (!sender) return;
-    const tokens = store.pushTokensFor(userId, sender.environment);
-    if (tokens.length === 0) return;
+    await Promise.all(notificationSenders.map(async (sender) => {
+      const tokens = store.pushTokensFor(userId, sender.environment);
+      if (tokens.length === 0) return;
 
-    try {
-      const result = await sender.send(tokens, notification);
-      await store.removePushTokens(result.invalidTokens, sender.environment);
-      if (result.failedCount > 0) {
-        app.log.warn(
-          { failedCount: result.failedCount, event: notification.event },
-          "Some push notifications were rejected by APNs"
+      try {
+        const result = await sender.send(tokens, notification);
+        await store.removePushTokens(result.invalidTokens, sender.environment);
+        if (result.failedCount > 0) {
+          app.log.warn(
+            {
+              environment: sender.environment,
+              failedCount: result.failedCount,
+              event: notification.event
+            },
+            "Some push notifications were rejected by APNs"
+          );
+        }
+      } catch (error) {
+        app.log.error(
+          {
+            err: error,
+            environment: sender.environment,
+            event: notification.event
+          },
+          "Push notification delivery failed"
         );
       }
-    } catch (error) {
-      app.log.error(
-        { err: error, event: notification.event },
-        "Push notification delivery failed"
-      );
-    }
+    }));
   };
 
   app.get("/health", async (_request, reply) => {

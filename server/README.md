@@ -1,7 +1,7 @@
 # BikeGoGo Server
 
 这个目录是 BikeGoGo 后端服务。当前已提供访客账户、Sign in with Apple、好友关系、
-小队、骑行云同步和受账户鉴权保护的 LiveKit token。
+小队、骑行云同步、APNs 推送和受账户鉴权保护的 LiveKit token。
 
 - 设备绑定的访客账户和用户资料。
 - Apple JWT 验证、访客账户绑定和会话退出。
@@ -9,8 +9,8 @@
 - 小队创建、邀请、移出、退出和解散。
 - 需要登录且校验好友/小队成员关系的 LiveKit room token 签发。
 - 骑行记录、指标和轨迹点同步。
-
-APNs 推送和 PostgreSQL 迁移是下一阶段工作。
+- PostgreSQL 16 主存储及旧 JSON 自动迁移、镜像备份。
+- APNs Sandbox/Production 双通道，按 App 构建环境隔离 device token。
 
 ## 本地启动
 
@@ -61,9 +61,9 @@ curl -X POST http://localhost:8080/v1/auth/guest \
 - Node.js + TypeScript。
 - Fastify。
 - LiveKit Server SDK。
-- JSON 文件持久化，MVP 部署到 Docker 数据卷。
-- PostgreSQL，下一阶段接入。
-- Redis，语音在线状态和同步阶段接入。
+- PostgreSQL 16 主存储。
+- JSON 滚动镜像和迁移前备份。
+- APNs HTTP/2 token 鉴权推送。
 
 ## 已实现 API
 
@@ -72,6 +72,8 @@ GET /health
 POST /v1/auth/guest
 POST /v1/auth/apple
 DELETE /v1/session
+PUT /v1/push-tokens
+DELETE /v1/push-tokens/:token
 GET /v1/me
 PATCH /v1/me
 GET /v1/friends

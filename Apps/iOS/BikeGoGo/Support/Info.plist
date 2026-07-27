@@ -4,6 +4,8 @@
 <dict>
 	<key>BikeGoGoAPIBaseURL</key>
 	<string>https://bikegogogo-server.sssnto.cn:8443</string>
+	<key>BikeGoGoPushEnvironment</key>
+	<string>$(BIKEGOGO_PUSH_ENVIRONMENT)</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
@@ -29,10 +31,6 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
-	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>BikeGoGo 后续可连接踏频、功率等骑行蓝牙设备。</string>
-	<key>NSCameraUsageDescription</key>
-	<string>BikeGoGo 后续可用于骑行小队视频或扫码添加好友。</string>
 	<key>NSHealthShareUsageDescription</key>
 	<string>BikeGoGo 需要读取心率和运动数据来展示骑行统计。</string>
 	<key>NSHealthUpdateUsageDescription</key>

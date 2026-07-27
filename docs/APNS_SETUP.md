@@ -10,7 +10,7 @@ APNs 是 Apple Push Notification service。BikeGoGo 后端需要向 APNs 证明�
 ```text
 APNS_KEY_ID=CM2W9J6CX3
 APNS_TEAM_ID=FR9RTRV9BC
-APNS_KEY_PATH=/run/secrets/apns-private-key.p8
+APNS_KEY_PATH=/run/secrets/AuthKey_CM2W9J6CX3.p8
 ```
 
 推送主题 `APNS_TOPIC` 是 iOS Bundle ID：
@@ -132,9 +132,11 @@ services:
       APNS_TEAM_ID: "${APNS_TEAM_ID}"
       APNS_TOPIC: "${APNS_TOPIC:-com.sssnto.BikeGoGo}"
       APNS_ENVIRONMENT: "${APNS_ENVIRONMENT:-sandbox}"
-      APNS_KEY_PATH: "/run/secrets/apns-private-key.p8"
+      APNS_KEY_PATH: "/run/secrets/AuthKey_${APNS_KEY_ID}.p8"
+      APNS_PRODUCTION_KEY_ID: "${APNS_PRODUCTION_KEY_ID:-}"
+      APNS_PRODUCTION_KEY_PATH: "/run/secrets/apns-production-key.p8"
     volumes:
-      - "./secrets/AuthKey_${APNS_KEY_ID}.p8:/run/secrets/apns-private-key.p8:ro"
+      - "./secrets:/run/secrets:ro"
 ```
 
 `.env` 只写非私钥配置：
@@ -144,9 +146,18 @@ APNS_KEY_ID=CM2W9J6CX3
 APNS_TEAM_ID=FR9RTRV9BC
 APNS_TOPIC=com.sssnto.BikeGoGo
 APNS_ENVIRONMENT=sandbox
+APNS_PRODUCTION_KEY_ID=<Production Key ID，未准备时留空>
 ```
 
 仓库已忽略 `*.p8` 和 `deploy/nas/secrets/`，但仍要在提交前执行 `git status` 检查。
+
+Production Key 文件固定放在：
+
+```text
+deploy/nas/secrets/apns-production-key.p8
+```
+
+Sandbox 和 Production 会同时启用，不需要发布 TestFlight 时停掉 Sandbox。
 
 ## 7. 后端实际如何使用
 
@@ -196,9 +207,10 @@ docker compose logs --tail=100 bikegogogo-server
 也可以使用 [Apple Push Notifications Console](https://developer.apple.com/notifications/push-notifications-console/)
 做 APNs 层面的独立测试。业务链路测试仍建议使用两台安装了 BikeGoGo 的真机。
 
-Debug 真机使用 Sandbox；TestFlight/App Store 使用 Production。当前 Key 是 Sandbox，
-所以发布 TestFlight 前必须再创建 Production Key，切换 `.p8` 和
-`APNS_ENVIRONMENT=production` 后重启后端。
+Debug 真机使用 Sandbox；TestFlight/App Store 使用 Production。发布 TestFlight 前需
+创建 Production Key，把它保存为 `secrets/apns-production-key.p8`，并配置
+`APNS_PRODUCTION_KEY_ID`。后端会同时维护两套 APNs 连接，无需切换
+`APNS_ENVIRONMENT`，现有 Debug 推送也不会中断。
 
 ## 9. 常见问题
 
