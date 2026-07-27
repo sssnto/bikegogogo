@@ -3,15 +3,18 @@ import CoreLocation
 import MapKit
 import SwiftUI
 
+private let defaultRideMapRegion = MKCoordinateRegion(
+    center: CLLocationCoordinate2D(latitude: 31.2304, longitude: 121.4737),
+    span: MKCoordinateSpan(latitudeDelta: 0.025, longitudeDelta: 0.025)
+)
+
 struct RideTrackingView: View {
     @EnvironmentObject private var appState: AppState
     @State private var isConfirmingFinish = false
     @State private var isConfirmingDiscard = false
-    @State private var camera = MapCameraPosition.region(
-        MKCoordinateRegion(
-            center: CLLocationCoordinate2D(latitude: 31.2304, longitude: 121.4737),
-            span: MKCoordinateSpan(latitudeDelta: 0.025, longitudeDelta: 0.025)
-        )
+    @State private var camera = MapCameraPosition.userLocation(
+        followsHeading: false,
+        fallback: .region(defaultRideMapRegion)
     )
 
     private var coordinates: [CLLocationCoordinate2D] {
@@ -42,6 +45,12 @@ struct RideTrackingView: View {
                         )
                     )
                 }
+                .onChange(of: appState.locationAuthorizationStatus) { _, status in
+                    guard status == .authorizedAlways || status == .authorizedWhenInUse else {
+                        return
+                    }
+                    focusOnCurrentLocation()
+                }
 
                 metricsPanel
                     .padding(16)
@@ -56,10 +65,11 @@ struct RideTrackingView: View {
                     if appState.currentRide.state == .idle || appState.currentRide.state == .finished {
                         Button {
                             appState.requestRidePermissions()
+                            focusOnCurrentLocation()
                         } label: {
-                            Image(systemName: "location.circle")
+                            Image(systemName: "location.circle.fill")
                         }
-                        .accessibilityLabel("请求定位权限")
+                        .accessibilityLabel("定位到我的位置")
                     } else {
                         Button(role: .destructive) {
                             isConfirmingDiscard = true
@@ -95,6 +105,15 @@ struct RideTrackingView: View {
             } message: {
                 Text(appState.rideAlertMessage ?? "")
             }
+        }
+    }
+
+    private func focusOnCurrentLocation() {
+        withAnimation(.easeInOut(duration: 0.3)) {
+            camera = .userLocation(
+                followsHeading: false,
+                fallback: .region(defaultRideMapRegion)
+            )
         }
     }
 
