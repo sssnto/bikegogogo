@@ -50,6 +50,9 @@ ALLOWED_ORIGINS=
 DATA_FILE=/data/bikegogogo.json
 APPLE_BUNDLE_ID=com.sssnto.BikeGoGo
 SESSION_TTL_DAYS=30
+POSTGRES_DB=bikegogogo
+POSTGRES_USER=bikegogogo
+POSTGRES_PASSWORD=<64位十六进制强密码>
 ```
 
 注意：
@@ -59,6 +62,9 @@ SESSION_TTL_DAYS=30
 - iOS App 不直接连接 LiveKit API Secret，只向这个后端请求短期 token。
 - `APPLE_BUNDLE_ID` 必须与 iOS target 的 Product Bundle Identifier 完全一致。
 - Apple 身份公钥由服务端从 Apple 官方 JWKS 自动读取，不需要在 NAS 保存 Apple 私钥。
+- PostgreSQL 不映射宿主机端口，只允许同一 Compose 网络中的后端访问。
+- 当前 API 仍从 `bikegogogo.json` 读取数据；PostgreSQL 已就绪，但要等数据迁移版本发布
+  后才会成为主存储。
 
 ## Docker Run 部署
 
@@ -102,7 +108,14 @@ deploy/nas/.env.example
 cp .env.example .env
 ```
 
-然后把 `.env` 里的 `LIVEKIT_API_KEY` 和 `LIVEKIT_API_SECRET` 改成你的真实值。
+先生成一个只包含十六进制字符的数据库密码，避免 URL 编码问题：
+
+```bash
+openssl rand -hex 32
+```
+
+然后把 `.env` 里的 `LIVEKIT_API_KEY`、`LIVEKIT_API_SECRET` 和
+`POSTGRES_PASSWORD` 改成真实值。
 
 `docker-compose.yml` 内容示例：
 
@@ -112,6 +125,9 @@ services:
     image: ghcr.io/sssnto/bikegogogo-server:latest
     container_name: bikegogogo-server
     restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
     ports:
       - "${BIKEGOGOGO_HTTP_PORT:-8080}:8080"
     environment:
@@ -122,13 +138,34 @@ services:
       LIVEKIT_API_SECRET: "${LIVEKIT_API_SECRET}"
       ALLOWED_ORIGINS: ""
       DATA_FILE: "/data/bikegogogo.json"
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-bikegogogo}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/nas/.env}@postgres:5432/${POSTGRES_DB:-bikegogogo}"
       APPLE_BUNDLE_ID: "com.sssnto.BikeGoGo"
       SESSION_TTL_DAYS: "30"
     volumes:
       - bikegogogo-data:/data
 
+  postgres:
+    image: postgres:16-alpine
+    container_name: bikegogogo-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB:-bikegogogo}"
+      POSTGRES_USER: "${POSTGRES_USER:-bikegogogo}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/nas/.env}"
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+      PGDATA: "/var/lib/postgresql/data/pgdata"
+    volumes:
+      - bikegogogo-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
 volumes:
   bikegogogo-data:
+  bikegogogo-postgres:
 ```
 
 同目录 `.env`：
@@ -138,13 +175,19 @@ LIVEKIT_API_KEY=your_livekit_api_key
 LIVEKIT_API_SECRET=your_livekit_api_secret
 APPLE_BUNDLE_ID=com.sssnto.BikeGoGo
 SESSION_TTL_DAYS=30
+POSTGRES_DB=bikegogogo
+POSTGRES_USER=bikegogogo
+POSTGRES_PASSWORD=<openssl rand -hex 32 的输出>
 ```
 
 启动：
 
 ```bash
 docker compose up -d
+docker compose ps
 ```
+
+`bikegogogo-postgres` 应显示 `healthy`，`bikegogogo-server` 随后才会启动。
 
 升级：
 
@@ -157,6 +200,9 @@ docker compose up -d --force-recreate
 不要删除这个卷，也不要执行 `docker compose down -v`。随着真机骑行数据增加，应设置
 定期备份；可通过 NAS 的 Docker 卷备份功能，或暂停容器后备份卷内的
 `bikegogogo.json`。
+
+`bikegogogo-postgres` 是 PostgreSQL 数据卷，也必须一起备份。数据库接管主存储前，
+不要删除 JSON 数据卷；迁移完成并验收后仍建议保留一段时间作为回滚备份。
 
 ## 对外暴露的服务
 
@@ -184,7 +230,7 @@ https://bikegogogo-server.sssnto.cn:8443
 
 - NAS 管理后台。
 - Docker daemon。
-- 未来的 PostgreSQL。
+- PostgreSQL。
 - 未来的 Redis。
 - LiveKit API Secret。
 

@@ -3,6 +3,9 @@ services:
     image: ghcr.io/sssnto/bikegogogo-server:latest
     container_name: bikegogogo-server
     restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
     ports:
       - "${BIKEGOGOGO_HTTP_PORT:-8080}:8080"
     environment:
@@ -13,6 +16,7 @@ services:
       LIVEKIT_API_SECRET: "${LIVEKIT_API_SECRET}"
       ALLOWED_ORIGINS: "${ALLOWED_ORIGINS:-}"
       DATA_FILE: "/data/bikegogogo.json"
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-bikegogogo}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/nas/.env}@postgres:5432/${POSTGRES_DB:-bikegogogo}"
       APPLE_BUNDLE_ID: "${APPLE_BUNDLE_ID:-com.sssnto.BikeGoGo}"
       SESSION_TTL_DAYS: "${SESSION_TTL_DAYS:-30}"
     volumes:
@@ -30,5 +34,30 @@ services:
       retries: 3
       start_period: 10s
 
+  postgres:
+    image: postgres:16-alpine
+    container_name: bikegogogo-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB:-bikegogogo}"
+      POSTGRES_USER: "${POSTGRES_USER:-bikegogogo}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/nas/.env}"
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+      PGDATA: "/var/lib/postgresql/data/pgdata"
+    volumes:
+      - bikegogogo-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    stop_grace_period: 30s
+
 volumes:
   bikegogogo-data:
+  bikegogogo-postgres:

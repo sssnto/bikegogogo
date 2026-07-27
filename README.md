@@ -89,3 +89,4 @@ xcodebuild -project BikeGoGo/BikeGoGo.xcodeproj \
 - [部署文档](docs/DEPLOYMENT.md)
 - [中间件准备清单](docs/MIDDLEWARE_PREP.md)
 - [NAS Docker 部署](docs/NAS_DOCKER_DEPLOYMENT.md)
+- [APNs 私钥申请与保管](docs/APNS_SETUP.md)

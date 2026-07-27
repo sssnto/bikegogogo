@@ -1,6 +1,8 @@
 .DS_Store
 .env
 server/.env
+*.p8
+deploy/nas/secrets/
 .build/
 node_modules/
 server/dist/

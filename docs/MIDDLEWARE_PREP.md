@@ -97,6 +97,7 @@ API Secret 只填到 `server/.env`，不要写进 iOS App。
 - Team ID `FR9RTRV9BC`。
 
 `.p8` 私钥不要粘贴到聊天或提交到 Git，应通过 NAS secret 文件或受保护环境变量挂载。
+完整操作见 [APNs 私钥申请与保管](APNS_SETUP.md)。
 
 注意：
 
@@ -118,7 +119,8 @@ API Secret 只填到 `server/.env`，不要写进 iOS App。
 建议优先级：扩大内测前必须。当前版本已经用 NAS Docker 数据卷中的 JSON 文件提供
 可用的骑行云同步，适合少量账号真机联调；并发用户和轨迹数据增加前需要迁移到数据库。
 
-你使用 NAS 时，推荐直接准备 PostgreSQL 16 容器，并只开放 Docker 内部网络。后续需要：
+NAS Compose 已包含 PostgreSQL 16 容器、健康检查和独立数据卷，并且没有映射数据库
+端口。后端容器可通过下面的内部地址访问：
 
 ```text
 DATABASE_URL=postgresql://bikegogogo:<强密码>@postgres:5432/bikegogogo

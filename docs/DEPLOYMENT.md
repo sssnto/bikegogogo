@@ -194,6 +194,7 @@ SESSION_TTL_DAYS=30
 ```
 
 完整外部服务准备清单见 [中间件准备清单](MIDDLEWARE_PREP.md)。
+APNs Key 的创建、下载和 NAS 保管步骤见 [APNs `.p8` 操作指南](APNS_SETUP.md)。
 
 ## 6. 后端部署建议
 
@@ -209,7 +210,8 @@ SESSION_TTL_DAYS=30
 如果你使用家里的 NAS 部署后端，优先走 Docker 镜像：
 
 - GitHub Actions 自动构建并推送 GHCR 镜像。
-- NAS 拉取镜像后通过 Docker 或 Docker Compose 运行。
+- NAS 拉取镜像后通过 Docker Compose 同时运行 API 和 PostgreSQL 16。
+- PostgreSQL 只在 Compose 内部网络使用，不映射公网端口。
 - 详细步骤见 [NAS Docker 部署](NAS_DOCKER_DEPLOYMENT.md)。
 
 ## 7. TestFlight
