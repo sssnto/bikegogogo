@@ -83,6 +83,9 @@ private struct AccountView: View {
             .refreshable {
                 await account.refresh()
             }
+            .task {
+                await account.refresh()
+            }
             .overlay {
                 if account.isWorking, account.currentUser != nil {
                     ProgressView()

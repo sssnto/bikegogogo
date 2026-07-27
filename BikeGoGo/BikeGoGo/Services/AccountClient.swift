@@ -76,6 +76,7 @@ final class AccountClient: ObservableObject {
 
     func bootstrap(defaultDisplayName: String) async {
         guard !isWorking else { return }
+        errorMessage = nil
         isWorking = true
         defer { isWorking = false }
 
@@ -173,6 +174,7 @@ final class AccountClient: ObservableObject {
 
     func refresh() async {
         guard accessToken != nil, !isWorking else { return }
+        errorMessage = nil
         isWorking = true
         defer { isWorking = false }
 
