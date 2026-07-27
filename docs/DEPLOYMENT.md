@@ -7,12 +7,19 @@
 3. 在 Xcode 的 Settings > Accounts 中添加 Apple ID。
 4. 准备一台 iPhone 真机和一块 Apple Watch 真机。HealthKit、后台定位、WatchConnectivity 的很多行为必须真机测试。
 
-如果 Apple Developer Program 账号仍在审核中：
+当前开发团队 ID 为 `FR9RTRV9BC`，Apple Developer Program 已通过审核。
 
-- 可以先创建 Xcode 工程、整理源码、跑 Swift 包测试。
-- 可以先启动本地后端并验证 LiveKit token endpoint。
-- 可能无法完整开启 HealthKit、Push Notifications、TestFlight 和部分真机签名能力。
-- 审核通过后，第一时间在 Apple Developer 后台确认 Bundle ID、Capabilities 和证书。
+在 [Certificates, Identifiers & Profiles](https://developer.apple.com/account/resources/identifiers/list)
+确认两个 App ID：
+
+```text
+com.sssnto.BikeGoGo
+com.sssnto.BikeGoGo.watchkitapp
+```
+
+iOS App ID 开启 `Sign in with Apple`、`HealthKit` 和 `Push Notifications`；Watch App ID
+开启 `HealthKit`。修改 capability 后回到 Xcode，让 Automatic Signing 重新生成
+provisioning profile。
 
 ## 2. 打开现有 Xcode 工程
 
@@ -42,7 +49,9 @@ iOS App target 使用：
   - Location updates
   - Audio, AirPlay, and Picture in Picture
   - Remote notifications
-- HealthKit、Push Notifications 和 Sign in with Apple 在账号同步阶段再开启。
+- HealthKit。
+- Sign in with Apple。
+- Push Notifications（APNs 接入前先开启 capability）。
 
 Info.plist 需要配置：
 
@@ -81,7 +90,8 @@ Info.plist 需要配置：
 4. 按 `Cmd+R` 安装。
 5. 第一次开始骑行时先允许“使用 App 时定位”，随后允许“始终定位”。
 6. 第一次加入语音时允许麦克风。
-7. 骑行开始后锁屏 3 至 5 分钟，再解锁确认路线和计时继续增长。
+7. 在“我的 > 账户安全”点击“通过 Apple 继续”，确认访客好友码在绑定后不变。
+8. 骑行开始后锁屏 3 至 5 分钟，再解锁确认路线和计时继续增长。
 
 ## 4. Apple Watch 真机
 
@@ -105,9 +115,17 @@ Watch target 已配置 HealthKit 使用说明、`workout-processing` 后台模�
 3. 设备选择与该 iPhone 配对的 Apple Watch。
 4. 在 `BikeGoGoWatch > Signing & Capabilities` 确认 Team 正确。
 5. 按 `Cmd+R`，首次启动允许读写 HealthKit。
-6. 从 Watch 开始训练，确认 iPhone 骑行页同步进入记录状态并显示心率。
-7. 从任意一端暂停、继续和结束，确认另一端同步。
-8. 结束后在 iPhone 的“健康/健身记录”中确认 outdoor cycling workout 已保存。
+6. 保持 Watch App 在后台，从 iPhone 点击“开始骑行”。
+7. 确认 Watch 被自动唤醒，并开始类型为“户外单车”的 workout。
+8. 确认 iPhone 收到 Watch 心率；从任意一端暂停、继续和结束，另一端同步。
+9. 结束后在 iPhone 的“健康/健身记录”中确认 outdoor cycling workout 已保存。
+
+若没有自动唤醒，依次检查：
+
+- iPhone 与 Watch 已配对且 Watch App 已安装。
+- 两个 target 使用同一 Team，Bundle ID 与 companion 配置一致。
+- iPhone 和 Watch 都已允许 BikeGoGo 访问健康数据。
+- Watch 未开启低电量模式，且系统版本为 watchOS 10 或更高。
 
 ## 5. LiveKit
 
@@ -140,12 +158,21 @@ LIVEKIT_API_SECRET=your_secret
 验证：
 
 ```bash
-curl -X POST http://localhost:8080/v1/voice/rooms/weekend/token \
+LOGIN_JSON=$(curl -sS -X POST http://localhost:8080/v1/auth/guest \
   -H "Content-Type: application/json" \
-  -d '{"identity":"local-user","displayName":"Peng"}'
+  -d '{"deviceId":"local-device-identifier","displayName":"本地骑友"}')
+
+ACCESS_TOKEN=$(printf '%s' "$LOGIN_JSON" | jq -r .accessToken)
+
+# FRIEND_USER_ID 必须是已经互相同意的好友用户 ID。
+curl -X POST "http://localhost:8080/v1/voice/rooms/$FRIEND_USER_ID/token" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"canPublish":true,"canSubscribe":true}'
 ```
 
-当前 App 已指向公网服务 `https://bikegogogo-server.sssnto.cn:8443`。两台 iPhone 使用固定的演示小队房间，每台安装会生成自己的持久语音 identity，因此可以直接进行双机测试：
+当前 App 已指向公网服务 `https://bikegogogo-server.sssnto.cn:8443`。两台 iPhone 使用固定
+演示小队房间，LiveKit identity 由后端账户决定，因此可以直接进行双机测试：
 
 1. 两台 iPhone 都安装当前版本。
 2. 两边打开“语音”页并点击“加入语音”。
@@ -159,11 +186,8 @@ curl -X POST http://localhost:8080/v1/voice/rooms/weekend/token \
 LIVEKIT_URL=wss://your-project.livekit.cloud
 LIVEKIT_API_KEY=your_key
 LIVEKIT_API_SECRET=your_secret
-DATABASE_URL=postgres://user:password@host:5432/bikegogogo
-REDIS_URL=redis://host:6379
-APNS_KEY_ID=key_id
-APNS_TEAM_ID=team_id
-APNS_BUNDLE_ID=com.yourname.bikegogogo
+APPLE_BUNDLE_ID=com.sssnto.BikeGoGo
+SESSION_TTL_DAYS=30
 ```
 
 完整外部服务准备清单见 [中间件准备清单](MIDDLEWARE_PREP.md)。
@@ -193,6 +217,13 @@ APNS_BUNDLE_ID=com.yourname.bikegogogo
 4. 选择 App Store Connect。
 5. 上传后在 App Store Connect 创建 TestFlight 测试。
 6. 邀请好友邮箱加入测试。
+
+首次上传前还需要：
+
+1. 在 App Store Connect 创建 Bundle ID 为 `com.sssnto.BikeGoGo` 的 App。
+2. 为 Build 设置递增的 `CURRENT_PROJECT_VERSION`。
+3. 完成出口合规问答；当前 HTTPS/LiveKit 使用系统标准加密，通常选择不使用自定义加密。
+4. 内部测试员可直接邀请；外部测试员需要先通过 TestFlight Beta App Review。
 
 ## 8. App Store 审核注意事项
 

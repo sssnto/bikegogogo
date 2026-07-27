@@ -24,6 +24,7 @@ final class AppState: ObservableObject {
     let voiceClient = VoiceRoomClient()
     let accountClient = AccountClient()
     let watchBridge = WatchSessionBridge()
+    private let watchWorkoutLauncher = WatchWorkoutLauncher()
     private let localUserID: String
     private let localDisplayName: String
     private var cancellables: Set<AnyCancellable> = []
@@ -151,6 +152,7 @@ final class AppState: ObservableObject {
         rideRecorder.start()
         watchBridge.sendRideState(.recording)
         Task {
+            try? await watchWorkoutLauncher.startOutdoorCycling()
             await persistActiveRide()
         }
     }
@@ -236,11 +238,9 @@ final class AppState: ObservableObject {
         }
     }
 
-    func joinVoiceRoom() async {
+    func joinVoiceRoom(friendID: String) async {
         await voiceClient.join(
-            groupID: group.id.uuidString,
-            identity: accountClient.currentUser?.id ?? localUserID,
-            displayName: accountClient.currentUser?.displayName ?? localDisplayName,
+            groupID: friendID,
             accessToken: accountClient.accessToken
         )
         voiceRoom.isJoined = voiceClient.isConnected

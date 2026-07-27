@@ -4,7 +4,9 @@ import path from "node:path";
 
 export type UserRecord = {
   id: string;
-  deviceIdHash: string;
+  deviceIdHashes: string[];
+  appleSubject?: string;
+  email?: string;
   displayName: string;
   friendCode: string;
   createdAt: string;
@@ -26,6 +28,7 @@ type SessionRecord = {
   tokenHash: string;
   userId: string;
   createdAt: string;
+  expiresAt: string;
 };
 
 type FriendshipRecord = {
@@ -35,7 +38,7 @@ type FriendshipRecord = {
 };
 
 type DatabaseState = {
-  version: 1;
+  version: 2;
   users: UserRecord[];
   sessions: SessionRecord[];
   friendRequests: FriendRequestRecord[];
@@ -43,7 +46,7 @@ type DatabaseState = {
 };
 
 const emptyState = (): DatabaseState => ({
-  version: 1,
+  version: 2,
   users: [],
   sessions: [],
   friendRequests: [],
@@ -69,12 +72,15 @@ export class DataStore {
   private state: DatabaseState = emptyState();
   private mutationQueue: Promise<void> = Promise.resolve();
 
-  constructor(private readonly filePath: string) {}
+  constructor(
+    private readonly filePath: string,
+    private readonly sessionTTLMilliseconds = 30 * 24 * 60 * 60 * 1000
+  ) {}
 
   async initialize(): Promise<void> {
     try {
       const data = await readFile(this.filePath, "utf8");
-      this.state = JSON.parse(data) as DatabaseState;
+      this.state = this.migrate(JSON.parse(data) as Record<string, unknown>);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
         throw error;
@@ -89,42 +95,98 @@ export class DataStore {
   ): Promise<{ accessToken: string; user: UserRecord }> {
     return this.mutate(async () => {
       const deviceIdHash = hash(deviceId);
-      let user = this.state.users.find((candidate) => candidate.deviceIdHash === deviceIdHash);
+      let user = this.state.users.find((candidate) =>
+        candidate.deviceIdHashes.includes(deviceIdHash)
+      );
 
       if (!user) {
         const now = new Date().toISOString();
         user = {
           id: `usr_${randomUUID()}`,
-          deviceIdHash,
+          deviceIdHashes: [deviceIdHash],
           displayName: suggestedDisplayName,
           friendCode: this.generateFriendCode(),
           createdAt: now,
           updatedAt: now
         };
         this.state.users.push(user);
+      } else if (user.appleSubject) {
+        throw new StoreError(
+          "apple_sign_in_required",
+          409,
+          "This account requires Sign in with Apple"
+        );
       }
 
-      const accessToken = randomBytes(32).toString("base64url");
-      this.state.sessions = this.state.sessions.filter(
-        (session) => session.userId !== user!.id
-      );
-      this.state.sessions.push({
-        tokenHash: hash(accessToken),
-        userId: user.id,
-        createdAt: new Date().toISOString()
-      });
+      return { accessToken: this.createSession(user.id), user };
+    });
+  }
 
-      return { accessToken, user };
+  async signInWithApple(input: {
+    subject: string;
+    email?: string;
+    displayName?: string;
+    deviceId: string;
+    currentUserId?: string;
+  }): Promise<{ accessToken: string; user: UserRecord }> {
+    return this.mutate(async () => {
+      const deviceIdHash = hash(input.deviceId);
+      const currentUser = input.currentUserId
+        ? this.userById(input.currentUserId)
+        : undefined;
+      let user = this.state.users.find(
+        (candidate) => candidate.appleSubject === input.subject
+      );
+
+      if (currentUser?.appleSubject && currentUser.appleSubject !== input.subject) {
+        throw new StoreError(
+          "apple_account_mismatch",
+          409,
+          "The current account is already linked to another Apple account"
+        );
+      }
+
+      if (user && currentUser && user.id !== currentUser.id) {
+        user = this.mergeUsers(user, currentUser);
+      } else if (!user && currentUser) {
+        user = currentUser;
+      } else if (!user) {
+        const deviceUser = this.state.users.find((candidate) =>
+          candidate.deviceIdHashes.includes(deviceIdHash) && !candidate.appleSubject
+        );
+        user = deviceUser ?? this.createUser(input.displayName ?? "骑行好友");
+      }
+
+      user.appleSubject = input.subject;
+      if (input.email) user.email = input.email;
+      if (input.displayName && !currentUser) user.displayName = input.displayName;
+      if (!user.deviceIdHashes.includes(deviceIdHash)) {
+        user.deviceIdHashes.push(deviceIdHash);
+      }
+      user.updatedAt = new Date().toISOString();
+
+      return { accessToken: this.createSession(user.id), user };
     });
   }
 
   userForAccessToken(accessToken: string): UserRecord | undefined {
     const session = this.state.sessions.find(
-      (candidate) => candidate.tokenHash === hash(accessToken)
+      (candidate) =>
+        candidate.tokenHash === hash(accessToken)
+        && new Date(candidate.expiresAt).getTime() > Date.now()
     );
     return session
       ? this.state.users.find((candidate) => candidate.id === session.userId)
       : undefined;
+  }
+
+  async revokeSession(accessToken: string): Promise<void> {
+    await this.mutate(async () => {
+      const tokenHash = hash(accessToken);
+      this.state.sessions = this.state.sessions.filter(
+        (session) => session.tokenHash !== tokenHash
+      );
+    });
   }
 
   userById(userId: string): UserRecord | undefined {
@@ -263,7 +325,7 @@ export class DataStore {
     return request;
   }
 
-  private areFriends(firstUserId: string, secondUserId: string): boolean {
+  areFriends(firstUserId: string, secondUserId: string): boolean {
     const [userAId, userBId] = normalizePair(firstUserId, secondUserId);
     return this.state.friendships.some(
       (friendship) =>
@@ -277,6 +339,103 @@ export class DataStore {
       throw new StoreError("user_not_found", 404, "User not found");
     }
     return user;
+  }
+
+  private createUser(displayName: string): UserRecord {
+    const now = new Date().toISOString();
+    const user: UserRecord = {
+      id: `usr_${randomUUID()}`,
+      deviceIdHashes: [],
+      displayName,
+      friendCode: this.generateFriendCode(),
+      createdAt: now,
+      updatedAt: now
+    };
+    this.state.users.push(user);
+    return user;
+  }
+
+  private createSession(userId: string): string {
+    const now = new Date();
+    const accessToken = randomBytes(32).toString("base64url");
+    const activeSessions = this.state.sessions.filter(
+      (session) => new Date(session.expiresAt).getTime() > now.getTime()
+    );
+    this.state.sessions = activeSessions
+      .filter((session) => session.userId !== userId)
+      .concat(activeSessions
+        .filter((session) => session.userId === userId)
+        .sort((first, second) => second.createdAt.localeCompare(first.createdAt))
+        .slice(0, 9));
+    this.state.sessions.push({
+      tokenHash: hash(accessToken),
+      userId,
+      createdAt: now.toISOString(),
+      expiresAt: new Date(now.getTime() + this.sessionTTLMilliseconds).toISOString()
+    });
+    return accessToken;
+  }
+
+  private mergeUsers(target: UserRecord, source: UserRecord): UserRecord {
+    target.deviceIdHashes = Array.from(
+      new Set([...target.deviceIdHashes, ...source.deviceIdHashes])
+    );
+    this.state.friendships = this.state.friendships
+      .map((friendship) => {
+        const [userAId, userBId] = normalizePair(
+          friendship.userAId === source.id ? target.id : friendship.userAId,
+          friendship.userBId === source.id ? target.id : friendship.userBId
+        );
+        return { ...friendship, userAId, userBId };
+      })
+      .filter((friendship, index, friendships) =>
+        friendship.userAId !== friendship.userBId
+        && friendships.findIndex(
+          (candidate) =>
+            candidate.userAId === friendship.userAId
+            && candidate.userBId === friendship.userBId
+        ) === index
+      );
+    this.state.friendRequests = this.state.friendRequests
+      .map((request) => ({
+        ...request,
+        fromUserId: request.fromUserId === source.id ? target.id : request.fromUserId,
+        toUserId: request.toUserId === source.id ? target.id : request.toUserId
+      }))
+      .filter((request) => request.fromUserId !== request.toUserId);
+    this.state.sessions = this.state.sessions.filter(
+      (session) => session.userId !== source.id
+    );
+    this.state.users = this.state.users.filter((user) => user.id !== source.id);
+    return target;
+  }
+
+  private migrate(raw: Record<string, unknown>): DatabaseState {
+    const legacy = raw as unknown as {
+      users?: Array<UserRecord & { deviceIdHash?: string }>;
+      sessions?: Array<Omit<SessionRecord, "expiresAt"> & { expiresAt?: string }>;
+      friendRequests?: FriendRequestRecord[];
+      friendships?: FriendshipRecord[];
+    };
+    const now = Date.now();
+    return {
+      version: 2,
+      users: (legacy.users ?? []).map((user) => {
+        const { deviceIdHash, ...currentUser } = user;
+        return {
+          ...currentUser,
+          deviceIdHashes: user.deviceIdHashes
+            ?? (deviceIdHash ? [deviceIdHash] : [])
+        };
+      }),
+      sessions: (legacy.sessions ?? []).map((session) => ({
+        ...session,
+        expiresAt: session.expiresAt
+          ?? new Date(now + this.sessionTTLMilliseconds).toISOString()
+      })),
+      friendRequests: legacy.friendRequests ?? [],
+      friendships: legacy.friendships ?? []
+    };
   }
 
   private generateFriendCode(): string {

@@ -48,6 +48,8 @@ LIVEKIT_API_KEY=your_livekit_api_key
 LIVEKIT_API_SECRET=your_livekit_api_secret
 ALLOWED_ORIGINS=
 DATA_FILE=/data/bikegogogo.json
+APPLE_BUNDLE_ID=com.sssnto.BikeGoGo
+SESSION_TTL_DAYS=30
 ```
 
 注意：
@@ -55,6 +57,8 @@ DATA_FILE=/data/bikegogogo.json
 - `LIVEKIT_API_SECRET` 只放在 NAS 的容器环境变量或 NAS 私有 env 文件里。
 - 不要把真实密钥写进 GitHub 仓库。
 - iOS App 不直接连接 LiveKit API Secret，只向这个后端请求短期 token。
+- `APPLE_BUNDLE_ID` 必须与 iOS target 的 Product Bundle Identifier 完全一致。
+- Apple 身份公钥由服务端从 Apple 官方 JWKS 自动读取，不需要在 NAS 保存 Apple 私钥。
 
 ## Docker Run 部署
 
@@ -71,6 +75,8 @@ docker run -d \
   -e LIVEKIT_API_SECRET=your_livekit_api_secret \
   -e ALLOWED_ORIGINS= \
   -e DATA_FILE=/data/bikegogogo.json \
+  -e APPLE_BUNDLE_ID=com.sssnto.BikeGoGo \
+  -e SESSION_TTL_DAYS=30 \
   -v bikegogogo-data:/data \
   ghcr.io/<你的 GitHub 用户名小写>/bikegogogo-server:latest
 ```
@@ -116,6 +122,8 @@ services:
       LIVEKIT_API_SECRET: "${LIVEKIT_API_SECRET}"
       ALLOWED_ORIGINS: ""
       DATA_FILE: "/data/bikegogogo.json"
+      APPLE_BUNDLE_ID: "com.sssnto.BikeGoGo"
+      SESSION_TTL_DAYS: "30"
     volumes:
       - bikegogogo-data:/data
 
@@ -128,6 +136,8 @@ volumes:
 ```bash
 LIVEKIT_API_KEY=your_livekit_api_key
 LIVEKIT_API_SECRET=your_livekit_api_secret
+APPLE_BUNDLE_ID=com.sssnto.BikeGoGo
+SESSION_TTL_DAYS=30
 ```
 
 启动：
@@ -206,6 +216,8 @@ GET /health
 
 ```http
 POST  /v1/auth/guest
+POST  /v1/auth/apple
+DELETE /v1/session
 GET   /v1/me
 PATCH /v1/me
 GET   /v1/friends
@@ -215,13 +227,13 @@ POST  /v1/friends/requests/{requestId}/accept
 POST  /v1/friends/requests/{requestId}/reject
 ```
 
-除 `POST /v1/auth/guest` 外，这些接口都要求
+除 `POST /v1/auth/guest` 和 `POST /v1/auth/apple` 外，这些接口都要求
 `Authorization: Bearer <accessToken>`。完整请求示例见 `docs/API_DESIGN.md`。
 
 ### 获取 LiveKit 语音房间 Token
 
 ```http
-POST /v1/voice/rooms/{groupId}/token
+POST /v1/voice/rooms/{friendUserId}/token
 Content-Type: application/json
 Authorization: Bearer <accessToken>
 ```
@@ -230,8 +242,6 @@ Authorization: Bearer <accessToken>
 
 ```json
 {
-  "identity": "user_123",
-  "displayName": "Peng",
   "canPublish": true,
   "canSubscribe": true
 }
@@ -249,10 +259,20 @@ Authorization: Bearer <accessToken>
 
 当前 MVP 注意事项：
 
-- 新版 iOS 使用访客账户鉴权，后端从会话读取语音身份。
-- 为兼容旧版 iOS，无 Authorization 时仍可在请求体传 `identity` 和 `displayName`。
-- 生产公网暴露前建议加 HTTPS、限流、鉴权和日志脱敏。
-- `groupId` 会映射为 LiveKit room：`group-{groupId}`。
+- 后端从账户会话读取语音身份和昵称，客户端不能指定其他用户身份。
+- 双方必须已接受好友关系；非好友请求返回 `403`。
+- 无 Authorization 或会话过期时返回 `401`。
+- 全局限制每个来源每分钟 120 个请求，登录接口每分钟 10 次，语音令牌每分钟 30 次。
+- 服务端对双方用户 ID 的固定排序结果做 SHA-256，生成相同的专属 LiveKit room。
+
+## 公网安全边界
+
+- 公网只开放反向代理的 HTTPS 端口；容器的 `8080` 只在 NAS 内网使用。
+- HTTPS/TLS 加密客户端到 NAS 的请求，包括 Bearer token 和业务数据。
+- 服务端仅保存访问令牌、设备 ID 的 SHA-256 摘要；iOS 原始令牌存入 Keychain。
+- LiveKit API Secret 只留在 NAS，iOS 获得的是 2 小时有效的房间 JWT。
+- `GET /health` 保持公开，其余业务接口按上述规则鉴权。
+- 当前 JSON 数据卷应纳入 NAS 加密备份；不要把数据卷暴露为网络共享。
 
 ## 反向代理建议
 
@@ -261,6 +281,8 @@ Authorization: Bearer <accessToken>
 - 外部 443 HTTPS。
 - 反向代理到容器 `http://127.0.0.1:8080` 或 `http://<NAS_IP>:8080`。
 - 开启自动 HTTPS 证书。
+- 开启 TLS 1.2/1.3，并把 HTTP 请求重定向到 HTTPS。
+- 建议添加 `Strict-Transport-Security: max-age=31536000`。
 - 限制只转发 `/health` 和 `/v1/` 路径。
 
 示例转发：

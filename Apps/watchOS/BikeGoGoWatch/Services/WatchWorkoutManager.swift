@@ -58,12 +58,17 @@ final class WatchWorkoutManager: NSObject, ObservableObject {
         }
     }
 
-    func startWorkout() {
+    func startWorkout(configuration providedConfiguration: HKWorkoutConfiguration? = nil) {
         guard !hasStarted else { return }
 
-        let configuration = HKWorkoutConfiguration()
-        configuration.activityType = .cycling
-        configuration.locationType = .outdoor
+        let configuration: HKWorkoutConfiguration
+        if let providedConfiguration {
+            configuration = providedConfiguration
+        } else {
+            configuration = HKWorkoutConfiguration()
+            configuration.activityType = .cycling
+            configuration.locationType = .outdoor
+        }
 
         do {
             let session = try HKWorkoutSession(healthStore: healthStore, configuration: configuration)

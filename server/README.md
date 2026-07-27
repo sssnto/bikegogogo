@@ -1,11 +1,12 @@
 # BikeGoGo Server
 
-这个目录是 BikeGoGo 后端服务。当前已提供访客账户、好友关系和 LiveKit token，
-后续继续补 Apple 登录、小队和骑行云同步。
+这个目录是 BikeGoGo 后端服务。当前已提供访客账户、Sign in with Apple、好友关系和
+受账户鉴权保护的 LiveKit token，后续继续补小队和骑行云同步。
 
 - 设备绑定的访客账户和用户资料。
+- Apple JWT 验证、访客账户绑定和会话退出。
 - 好友申请、同意、拒绝和好友列表。
-- LiveKit room token 签发。
+- 需要登录的 LiveKit room token 签发。
 - 骑行记录与轨迹点同步。
 - APNs 推送。
 
@@ -23,6 +24,8 @@ cp .env.example .env
 LIVEKIT_URL=wss://your-project.livekit.cloud
 LIVEKIT_API_KEY=your_key
 LIVEKIT_API_SECRET=your_secret
+APPLE_BUNDLE_ID=com.sssnto.BikeGoGo
+SESSION_TTL_DAYS=30
 ```
 
 `server/.env` 已被 `.gitignore` 排除，不要把真实 API Secret 写入 `.env.example`、README 或任何会提交到 Git 的文件。
@@ -65,6 +68,8 @@ curl -X POST http://localhost:8080/v1/auth/guest \
 ```http
 GET /health
 POST /v1/auth/guest
+POST /v1/auth/apple
+DELETE /v1/session
 GET /v1/me
 PATCH /v1/me
 GET /v1/friends

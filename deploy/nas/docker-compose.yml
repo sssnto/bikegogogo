@@ -13,6 +13,8 @@ services:
       LIVEKIT_API_SECRET: "${LIVEKIT_API_SECRET}"
       ALLOWED_ORIGINS: "${ALLOWED_ORIGINS:-}"
       DATA_FILE: "/data/bikegogogo.json"
+      APPLE_BUNDLE_ID: "${APPLE_BUNDLE_ID:-com.sssnto.BikeGoGo}"
+      SESSION_TTL_DAYS: "${SESSION_TTL_DAYS:-30}"
     volumes:
       - bikegogogo-data:/data
     healthcheck:

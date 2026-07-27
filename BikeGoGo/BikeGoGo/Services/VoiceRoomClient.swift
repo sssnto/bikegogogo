@@ -41,11 +41,13 @@ final class VoiceRoomClient: NSObject, ObservableObject, RoomDelegate, @unchecke
 
     func join(
         groupID: String,
-        identity: String,
-        displayName: String,
         accessToken: String?
     ) async {
         guard status == .disconnected else { return }
+        guard let accessToken else {
+            errorMessage = "请先建立 BikeGoGo 账户，再加入语音。"
+            return
+        }
 
         status = .connecting
         errorMessage = nil
@@ -53,8 +55,6 @@ final class VoiceRoomClient: NSObject, ObservableObject, RoomDelegate, @unchecke
         do {
             let response = try await tokenService.token(
                 groupID: groupID,
-                identity: identity,
-                displayName: displayName,
                 accessToken: accessToken
             )
             latestTokenResponse = response

@@ -1,6 +1,7 @@
 # 外部中间件准备清单
 
-这份清单按开发阶段排序。第二阶段“本地骑行记录 MVP”不依赖外部中间件；真正需要提前准备的是语音、账号、云同步和推送。
+这份清单按开发阶段排序。Apple Developer Program 和 LiveKit Cloud 已准备完成；接下来
+真正需要提前准备的是云同步数据库和推送密钥。
 
 ## 现在就可以准备
 
@@ -15,7 +16,7 @@
 - Push Notifications。
 - TestFlight。
 
-建议优先级：必须。
+状态：已通过审核。
 
 准备项：
 
@@ -23,6 +24,19 @@
 - 一个明确的 Bundle ID，例如 `com.yourname.bikegogogo`。
 - 一台 iPhone 真机。
 - 一块 Apple Watch 真机。
+
+当前 Bundle ID：
+
+```text
+com.sssnto.BikeGoGo
+com.sssnto.BikeGoGo.watchkitapp
+```
+
+需要在 Apple Developer 后台为对应 App ID 开启：
+
+- Sign in with Apple（iOS）。
+- HealthKit（iOS、watchOS）。
+- Push Notifications（iOS，接 APNs 时启用）。
 
 ## 第四阶段前准备
 
@@ -76,6 +90,14 @@ API Secret 只填到 `server/.env`，不要写进 iOS App。
 
 建议优先级：内测前必须。
 
+下一步需要你准备：
+
+- 一个 APNs `.p8` Key。
+- Key ID。
+- Team ID `FR9RTRV9BC`。
+
+`.p8` 私钥不要粘贴到聊天或提交到 Git，应通过 NAS secret 文件或受保护环境变量挂载。
+
 注意：
 
 - VoIP PushKit 审核比较严格，必须配合 CallKit 并用于真实通话场景。
@@ -95,7 +117,13 @@ API Secret 只填到 `server/.env`，不要写进 iOS App。
 
 建议优先级：云同步必须。
 
-推荐托管：
+你使用 NAS 时，推荐直接准备 PostgreSQL 16 容器，并只开放 Docker 内部网络。后续需要：
+
+```text
+DATABASE_URL=postgresql://bikegogogo:<强密码>@postgres:5432/bikegogogo
+```
+
+也可以使用托管服务：
 
 - Supabase。
 - Neon。
@@ -149,17 +177,9 @@ API Secret 只填到 `server/.env`，不要写进 iOS App。
 
 ## 建议的最小外部组合
 
-内测前最小组合：
+下一开发批次的最小组合：
 
-- Apple Developer Program。
-- LiveKit Cloud。
-- PostgreSQL 托管库。
-- Redis 托管实例。
+- PostgreSQL 16。
 - APNs Key。
 
-如果你想最快让好友试用，可以先只准备：
-
-- Apple Developer Program。
-- LiveKit Cloud。
-
-骑行记录先保存在手机本地，等体验稳定后再接云同步。
+Redis 和对象存储当前不阻塞；骑行记录继续保存在手机本地，直到 PostgreSQL 云同步完成。

@@ -15,8 +15,10 @@ BikeGoGo 是一个面向自行车骑行爱好者的 iOS + Apple Watch 应用原�
 - 可直接打开运行的 iOS + watchOS Xcode 工程。
 - CoreLocation 路线记录、本地恢复、历史记录和 GPX 导出。
 - Apple Watch HealthKit workout 与双向状态、心率同步。
+- iPhone 开始骑行时自动唤醒 Watch 户外单车训练。
 - LiveKit Swift SDK 真实语音房间、静音、成员状态和自动重连。
-- 已部署后端对应的 LiveKit token 客户端。
+- Sign in with Apple、访客账户原地绑定和 Keychain 会话。
+- 已登录账户鉴权的 LiveKit 短期 token。
 
 ## 推荐开发环境
 

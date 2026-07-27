@@ -1,8 +1,15 @@
 import cors from "@fastify/cors";
+import rateLimit from "@fastify/rate-limit";
+import { createHash } from "node:crypto";
 import Fastify, { type FastifyRequest } from "fastify";
 import { AccessToken } from "livekit-server-sdk";
 import { z } from "zod";
 
+import {
+  AppleIdentityError,
+  createAppleIdentityVerifier,
+  type AppleIdentityVerifier
+} from "./apple-auth.js";
 import {
   DataStore,
   StoreError,
@@ -16,6 +23,9 @@ export type AppConfig = {
   livekitApiSecret: string;
   allowedOrigins: string;
   dataFile: string;
+  appleBundleId: string;
+  sessionTTLDays: number;
+  appleIdentityVerifier?: AppleIdentityVerifier;
 };
 
 const publicUser = (user: UserRecord) => ({
@@ -23,7 +33,8 @@ const publicUser = (user: UserRecord) => ({
   displayName: user.displayName,
   friendCode: user.friendCode,
   createdAt: user.createdAt,
-  updatedAt: user.updatedAt
+  updatedAt: user.updatedAt,
+  authProvider: user.appleSubject ? "apple" : "guest"
 });
 
 const publicFriendRequest = (
@@ -39,13 +50,23 @@ const publicFriendRequest = (
 
 export async function createApp(config: AppConfig) {
   const app = Fastify({ logger: true });
-  const store = new DataStore(config.dataFile);
+  const store = new DataStore(
+    config.dataFile,
+    config.sessionTTLDays * 24 * 60 * 60 * 1000
+  );
+  const verifyAppleIdentity = config.appleIdentityVerifier
+    ?? createAppleIdentityVerifier(config.appleBundleId);
   await store.initialize();
 
   await app.register(cors, {
     origin: config.allowedOrigins
       ? config.allowedOrigins.split(",").map((origin) => origin.trim())
-      : true
+      : false
+  });
+  await app.register(rateLimit, {
+    global: true,
+    max: 120,
+    timeWindow: "1 minute"
   });
 
   const authenticatedUser = (request: FastifyRequest): UserRecord => {
@@ -78,13 +99,48 @@ export async function createApp(config: AppConfig) {
     displayName: z.string().trim().min(2).max(30)
   });
 
-  app.post("/v1/auth/guest", async (request) => {
+  app.post("/v1/auth/guest", {
+    config: { rateLimit: { max: 10, timeWindow: "1 minute" } }
+  }, async (request) => {
     const body = guestAuthSchema.parse(request.body);
     const session = await store.signInGuest(body.deviceId, body.displayName);
     return {
       accessToken: session.accessToken,
       user: publicUser(session.user)
     };
+  });
+
+  const appleAuthSchema = z.object({
+    identityToken: z.string().min(100).max(10_000),
+    rawNonce: z.string().min(16).max(128),
+    deviceId: z.string().min(16).max(128),
+    displayName: z.string().trim().min(2).max(30).optional()
+  });
+
+  app.post("/v1/auth/apple", {
+    config: { rateLimit: { max: 10, timeWindow: "1 minute" } }
+  }, async (request) => {
+    const body = appleAuthSchema.parse(request.body);
+    const currentUser = optionalAuthenticatedUser(request);
+    const identity = await verifyAppleIdentity(body.identityToken, body.rawNonce);
+    const session = await store.signInWithApple({
+      subject: identity.subject,
+      email: identity.email,
+      displayName: body.displayName,
+      deviceId: body.deviceId,
+      currentUserId: currentUser?.id
+    });
+    return {
+      accessToken: session.accessToken,
+      user: publicUser(session.user)
+    };
+  });
+
+  app.delete("/v1/session", async (request, reply) => {
+    authenticatedUser(request);
+    const accessToken = request.headers.authorization!.slice(7);
+    await store.revokeSession(accessToken);
+    return reply.status(204).send();
   });
 
   app.get("/v1/me", async (request) => ({
@@ -170,31 +226,34 @@ export async function createApp(config: AppConfig) {
   }
 
   const tokenRequestSchema = z.object({
-    identity: z.string().min(1).max(80).optional(),
-    displayName: z.string().min(1).max(80).optional(),
     canPublish: z.boolean().default(true),
     canSubscribe: z.boolean().default(true)
   });
 
-  app.post("/v1/voice/rooms/:groupId/token", async (request, reply) => {
-    const params = z.object({ groupId: z.string().min(1).max(80) }).parse(request.params);
+  app.post("/v1/voice/rooms/:groupId/token", {
+    config: { rateLimit: { max: 30, timeWindow: "1 minute" } }
+  }, async (request, reply) => {
+    const currentUser = authenticatedUser(request);
+    const params = z.object({
+      groupId: z.string().startsWith("usr_").max(80)
+    }).parse(request.params);
     const body = tokenRequestSchema.parse(request.body);
-    const currentUser = optionalAuthenticatedUser(request);
-    const identity = currentUser?.id ?? body.identity;
-    const displayName = currentUser?.displayName ?? body.displayName;
-
-    if (!identity || !displayName) {
+    if (!store.userById(params.groupId)) {
+      throw new StoreError("voice_peer_not_found", 404, "Voice peer not found");
+    }
+    if (!store.areFriends(currentUser.id, params.groupId)) {
       throw new StoreError(
-        "missing_voice_identity",
-        400,
-        "Voice identity and display name are required"
+        "voice_room_forbidden",
+        403,
+        "Both users must accept the friendship before joining voice"
       );
     }
 
-    const roomName = `group-${params.groupId}`;
+    const pair = [currentUser.id, params.groupId].sort().join(":");
+    const roomName = `friends-${createHash("sha256").update(pair).digest("hex").slice(0, 32)}`;
     const token = new AccessToken(config.livekitApiKey, config.livekitApiSecret, {
-      identity,
-      name: displayName,
+      identity: currentUser.id,
+      name: currentUser.displayName,
       ttl: "2h"
     });
 
@@ -215,9 +274,8 @@ export async function createApp(config: AppConfig) {
   });
 
   app.setErrorHandler((error, request, reply) => {
-    request.log.error(error);
-
     if (error instanceof z.ZodError) {
+      request.log.warn({ validationErrors: error.issues }, "Request validation failed");
       return reply.status(400).send({
         error: "invalid_request",
         message: "Request validation failed",
@@ -226,12 +284,22 @@ export async function createApp(config: AppConfig) {
     }
 
     if (error instanceof StoreError) {
+      request.log.warn({ code: error.code }, error.message);
       return reply.status(error.statusCode).send({
         error: error.code,
         message: error.message
       });
     }
 
+    if (error instanceof AppleIdentityError) {
+      request.log.warn({ code: "invalid_apple_identity" }, error.message);
+      return reply.status(401).send({
+        error: "invalid_apple_identity",
+        message: error.message
+      });
+    }
+
+    request.log.error(error);
     return reply.status(500).send({
       error: "internal_server_error",
       message: "Internal server error"

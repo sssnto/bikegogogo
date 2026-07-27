@@ -19,7 +19,9 @@ const envSchema = z.object({
   LIVEKIT_API_KEY: liveKitCredential("LIVEKIT_API_KEY"),
   LIVEKIT_API_SECRET: liveKitCredential("LIVEKIT_API_SECRET"),
   ALLOWED_ORIGINS: z.string().default(""),
-  DATA_FILE: z.string().default("./data/bikegogogo.json")
+  DATA_FILE: z.string().default("./data/bikegogogo.json"),
+  APPLE_BUNDLE_ID: z.string().default("com.sssnto.BikeGoGo"),
+  SESSION_TTL_DAYS: z.coerce.number().int().min(1).max(365).default(30)
 });
 
 const env = envSchema.parse(process.env);
@@ -28,7 +30,9 @@ const app = await createApp({
   livekitApiKey: env.LIVEKIT_API_KEY,
   livekitApiSecret: env.LIVEKIT_API_SECRET,
   allowedOrigins: env.ALLOWED_ORIGINS,
-  dataFile: env.DATA_FILE
+  dataFile: env.DATA_FILE,
+  appleBundleId: env.APPLE_BUNDLE_ID,
+  sessionTTLDays: env.SESSION_TTL_DAYS
 });
 
 await app.listen({ port: env.PORT, host: "0.0.0.0" });
