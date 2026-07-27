@@ -88,7 +88,7 @@ API Secret 只填到 `server/.env`，不要写进 iOS App。
 - 小队语音邀请。
 - 后续 VoIP 语音提醒。
 
-建议优先级：内测前必须。
+建议优先级：需要好友申请/小队邀请通知时启用，不阻塞当前双机语音和云同步测试。
 
 下一步需要你准备：
 
@@ -115,7 +115,8 @@ API Secret 只填到 `server/.env`，不要写进 iOS App。
 - 骑行记录。
 - 轨迹点索引。
 
-建议优先级：云同步必须。
+建议优先级：扩大内测前必须。当前版本已经用 NAS Docker 数据卷中的 JSON 文件提供
+可用的骑行云同步，适合少量账号真机联调；并发用户和轨迹数据增加前需要迁移到数据库。
 
 你使用 NAS 时，推荐直接准备 PostgreSQL 16 容器，并只开放 Docker 内部网络。后续需要：
 
@@ -177,9 +178,10 @@ DATABASE_URL=postgresql://bikegogogo:<强密码>@postgres:5432/bikegogogo
 
 ## 建议的最小外部组合
 
-下一开发批次的最小组合：
+下一开发批次请提前准备：
 
 - PostgreSQL 16。
-- APNs Key。
+- APNs `.p8` Key、Key ID 和 Team ID。
 
-Redis 和对象存储当前不阻塞；骑行记录继续保存在手机本地，直到 PostgreSQL 云同步完成。
+Redis 和对象存储当前不阻塞。`.p8` 私钥不要发送到聊天中，后续部署时通过 NAS secret
+文件只读挂载；PostgreSQL 只加入 Docker 内部网络，不开放公网端口。

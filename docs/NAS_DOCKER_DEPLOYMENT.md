@@ -153,9 +153,10 @@ docker compose pull
 docker compose up -d --force-recreate
 ```
 
-`bikegogogo-data` 是用户资料、好友申请和好友关系的数据卷。升级或重建容器时不要删除
-这个卷，也不要执行 `docker compose down -v`。备份可通过 NAS 的 Docker 卷备份功能，
-或暂停容器后备份卷内的 `bikegogogo.json`。
+`bikegogogo-data` 是用户、会话、好友、小队和完整骑行轨迹的数据卷。升级或重建容器时
+不要删除这个卷，也不要执行 `docker compose down -v`。随着真机骑行数据增加，应设置
+定期备份；可通过 NAS 的 Docker 卷备份功能，或暂停容器后备份卷内的
+`bikegogogo.json`。
 
 ## 对外暴露的服务
 
@@ -225,6 +226,15 @@ GET   /v1/friends/requests
 POST  /v1/friends/requests
 POST  /v1/friends/requests/{requestId}/accept
 POST  /v1/friends/requests/{requestId}/reject
+GET   /v1/groups
+POST  /v1/groups
+POST  /v1/groups/{groupId}/members
+DELETE /v1/groups/{groupId}/members/{userId}
+DELETE /v1/groups/{groupId}
+GET   /v1/rides
+GET   /v1/rides/{rideId}
+PUT   /v1/rides/{rideId}
+DELETE /v1/rides/{rideId}
 ```
 
 除 `POST /v1/auth/guest` 和 `POST /v1/auth/apple` 外，这些接口都要求
@@ -233,7 +243,7 @@ POST  /v1/friends/requests/{requestId}/reject
 ### 获取 LiveKit 语音房间 Token
 
 ```http
-POST /v1/voice/rooms/{friendUserId}/token
+POST /v1/voice/rooms/{friendUserId 或 groupId}/token
 Content-Type: application/json
 Authorization: Bearer <accessToken>
 ```
@@ -260,10 +270,10 @@ Authorization: Bearer <accessToken>
 当前 MVP 注意事项：
 
 - 后端从账户会话读取语音身份和昵称，客户端不能指定其他用户身份。
-- 双方必须已接受好友关系；非好友请求返回 `403`。
+- 好友房间要求双方已接受好友关系；小队房间要求当前账号是成员，否则返回 `403`。
 - 无 Authorization 或会话过期时返回 `401`。
 - 全局限制每个来源每分钟 120 个请求，登录接口每分钟 10 次，语音令牌每分钟 30 次。
-- 服务端对双方用户 ID 的固定排序结果做 SHA-256，生成相同的专属 LiveKit room。
+- 服务端对好友组合或小队 ID 做 SHA-256，生成稳定且不可直接推导的 LiveKit room。
 
 ## 公网安全边界
 
@@ -272,7 +282,8 @@ Authorization: Bearer <accessToken>
 - 服务端仅保存访问令牌、设备 ID 的 SHA-256 摘要；iOS 原始令牌存入 Keychain。
 - LiveKit API Secret 只留在 NAS，iOS 获得的是 2 小时有效的房间 JWT。
 - `GET /health` 保持公开，其余业务接口按上述规则鉴权。
-- 当前 JSON 数据卷应纳入 NAS 加密备份；不要把数据卷暴露为网络共享。
+- 当前 JSON 数据卷包含路线和账号信息，应纳入 NAS 加密备份；不要把数据卷暴露为网络共享。
+- 当前只适合小规模内测；扩大用户量前迁移 PostgreSQL，数据库只留在 Docker 内部网络。
 
 ## 反向代理建议
 

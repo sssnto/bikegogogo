@@ -11,15 +11,19 @@ final class AppState: ObservableObject {
         source: .iPhone,
         points: []
     )
-    @Published var recentRides: [RideSession] = [SampleData.ride]
+    @Published var recentRides: [RideSession] = []
     @Published var group = SampleData.group
     @Published var voiceRoom = SampleData.voiceRoom
     @Published private(set) var locationAuthorizationStatus: CLAuthorizationStatus = .notDetermined
     @Published private(set) var currentSpeedMetersPerSecond = 0.0
     @Published private(set) var watchHeartRate = 0.0
     @Published var rideAlertMessage: String?
+    @Published private(set) var isSyncingRides = false
+    @Published private(set) var rideSyncMessage: String?
+    @Published private(set) var lastRideSyncAt: Date?
 
     private let rideStore = LocalRideStore()
+    private let rideCloudClient = RideCloudClient()
     let rideRecorder = LocationRideRecorder()
     let voiceClient = VoiceRoomClient()
     let accountClient = AccountClient()
@@ -115,6 +119,7 @@ final class AppState: ObservableObject {
 
         await accountClient.bootstrap(defaultDisplayName: localDisplayName)
         await loadStoredRides()
+        await syncRides()
         watchBridge.activate()
     }
 
@@ -198,6 +203,7 @@ final class AppState: ObservableObject {
             recentRides.insert(currentRide, at: 0)
             Task {
                 await saveRecentRides()
+                await syncRides()
             }
         }
         Task {
@@ -238,9 +244,9 @@ final class AppState: ObservableObject {
         }
     }
 
-    func joinVoiceRoom(friendID: String) async {
+    func joinVoiceRoom(roomID: String) async {
         await voiceClient.join(
-            groupID: friendID,
+            groupID: roomID,
             accessToken: accountClient.accessToken
         )
         voiceRoom.isJoined = voiceClient.isConnected
@@ -255,6 +261,39 @@ final class AppState: ObservableObject {
         await voiceClient.setMuted(!voiceClient.isMuted)
         voiceRoom.isMuted = voiceClient.isMuted
         watchBridge.sendMuteState(voiceClient.isMuted)
+    }
+
+    func syncRides() async {
+        guard let accessToken = accountClient.accessToken, !isSyncingRides else { return }
+        isSyncingRides = true
+        rideSyncMessage = nil
+        defer { isSyncingRides = false }
+
+        do {
+            recentRides = try await rideCloudClient.synchronize(
+                localRides: recentRides,
+                accessToken: accessToken
+            )
+            try await rideStore.saveRides(recentRides)
+            lastRideSyncAt = Date()
+        } catch {
+            rideSyncMessage = "云同步暂时不可用，本地骑行记录不受影响。"
+            print("Ride cloud sync failed: \(error.localizedDescription)")
+        }
+    }
+
+    func deleteRide(_ ride: RideSession) async {
+        guard let accessToken = accountClient.accessToken else { return }
+
+        do {
+            try await rideCloudClient.delete(rideID: ride.id, accessToken: accessToken)
+            recentRides.removeAll { $0.id == ride.id }
+            try await rideStore.saveRides(recentRides)
+            rideSyncMessage = nil
+        } catch {
+            rideSyncMessage = "删除失败，请检查网络后重试。"
+            print("Deleting ride failed: \(error.localizedDescription)")
+        }
     }
 
     private func loadStoredRides() async {

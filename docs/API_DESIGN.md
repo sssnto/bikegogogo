@@ -108,20 +108,40 @@ POST /v1/groups
 GET /v1/groups
 POST /v1/groups/{groupId}/members
 DELETE /v1/groups/{groupId}/members/{userId}
+DELETE /v1/groups/{groupId}
 ```
+
+创建小队：
+
+```json
+{
+  "name": "周末骑行队"
+}
+```
+
+邀请成员：
+
+```json
+{
+  "userId": "usr_..."
+}
+```
+
+只有创建者可以邀请、移出成员或解散小队；被邀请人必须已经是创建者的好友。普通成员
+可以通过删除自己的成员关系退出小队。每个小队当前最多 20 人。
 
 ## 语音
 
 客户端通过后端换取 LiveKit token：
 
 ```http
-POST /v1/voice/rooms/{friendUserId}/token
+POST /v1/voice/rooms/{friendUserId 或 groupId}/token
 Authorization: Bearer <accessToken>
 ```
 
-当前版本是一对一好友语音：双方必须已经互相同意并成为好友。后端再次校验好友关系，
-再为双方生成相同且不可直接推导的房间名。客户端只提交发布/订阅权限，后端强制使用
-当前账户的用户 ID 和昵称签发 2 小时 LiveKit 令牌。无会话返回 `401`，非好友返回 `403`。
+传入 `usr_...` 时，双方必须已经互相同意并成为好友；传入 `grp_...` 时，当前用户必须
+是小队成员。后端生成不可直接推导的房间名，并强制使用当前账户的用户 ID 和昵称签发
+2 小时 LiveKit 令牌。无会话返回 `401`，无好友或小队成员关系返回 `403`。
 
 ```json
 {
@@ -143,17 +163,25 @@ Authorization: Bearer <accessToken>
 ## 骑行记录
 
 ```http
-POST /v1/rides
-PATCH /v1/rides/{rideId}
-POST /v1/rides/{rideId}/points:batch
 GET /v1/rides
 GET /v1/rides/{rideId}
+PUT /v1/rides/{rideId}
+DELETE /v1/rides/{rideId}
 ```
 
-批量上传轨迹点：
+`PUT` 是幂等上传，URL 中的 UUID 必须与请求体 `id` 一致，且当前仅接收已经结束的
+骑行记录。客户端在启动和完成骑行后上传本地记录，再拉取账号下的云端历史。
+
+请求体示例：
 
 ```json
 {
+  "id": "87980d51-e579-4ac2-a494-d6e27fe2fbf7",
+  "title": "本次骑行",
+  "state": "finished",
+  "source": "iPhone",
+  "startedAt": "2026-07-27T01:00:00Z",
+  "endedAt": "2026-07-27T02:15:00Z",
   "points": [
     {
       "latitude": 31.2304,
@@ -162,6 +190,17 @@ GET /v1/rides/{rideId}
       "speedMetersPerSecond": 6.8,
       "timestamp": "2026-07-24T01:00:00Z"
     }
-  ]
+  ],
+  "metrics": {
+    "distanceMeters": 25600,
+    "movingDurationSeconds": 4200,
+    "elapsedDurationSeconds": 4500,
+    "averageSpeedMetersPerSecond": 6.1,
+    "maxSpeedMetersPerSecond": 12.8,
+    "elevationGainMeters": 180
+  }
 }
 ```
+
+每条记录最多 100,000 个轨迹点。所有读取、覆盖和删除操作都按当前账号隔离；其他账号
+即使知道 ride UUID 也无法访问。

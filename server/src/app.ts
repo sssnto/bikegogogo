@@ -14,6 +14,8 @@ import {
   DataStore,
   StoreError,
   type FriendRequestRecord,
+  type GroupRecord,
+  type RideRecord,
   type UserRecord
 } from "./data-store.js";
 
@@ -48,8 +50,32 @@ const publicFriendRequest = (
   user: publicUser(otherUser)
 });
 
+const publicGroup = (store: DataStore, group: GroupRecord, currentUserId: string) => ({
+  id: group.id,
+  name: group.name,
+  owner: publicUser(store.userById(group.ownerId)!),
+  members: group.memberIds
+    .map((memberId) => store.userById(memberId))
+    .filter((member): member is UserRecord => Boolean(member))
+    .map(publicUser),
+  isOwner: group.ownerId === currentUserId,
+  createdAt: group.createdAt,
+  updatedAt: group.updatedAt
+});
+
+const publicRide = (ride: RideRecord) => ({
+  id: ride.id,
+  title: ride.title,
+  state: ride.state,
+  source: ride.source,
+  startedAt: ride.startedAt,
+  endedAt: ride.endedAt,
+  points: ride.points,
+  metrics: ride.metrics
+});
+
 export async function createApp(config: AppConfig) {
-  const app = Fastify({ logger: true });
+  const app = Fastify({ logger: true, bodyLimit: 15 * 1024 * 1024 });
   const store = new DataStore(
     config.dataFile,
     config.sessionTTLDays * 24 * 60 * 60 * 1000
@@ -225,6 +251,68 @@ export async function createApp(config: AppConfig) {
     );
   }
 
+  const groupBodySchema = z.object({
+    name: z.string().trim().min(2).max(40)
+  });
+
+  app.get("/v1/groups", async (request) => {
+    const currentUser = authenticatedUser(request);
+    return {
+      groups: store.groupsFor(currentUser.id).map(
+        (group) => publicGroup(store, group, currentUser.id)
+      )
+    };
+  });
+
+  app.post("/v1/groups", async (request, reply) => {
+    const currentUser = authenticatedUser(request);
+    const body = groupBodySchema.parse(request.body);
+    const group = await store.createGroup(currentUser.id, body.name);
+    return reply.status(201).send({
+      group: publicGroup(store, group, currentUser.id)
+    });
+  });
+
+  const groupParamsSchema = z.object({
+    groupId: z.string().startsWith("grp_").max(80)
+  });
+  const groupMemberBodySchema = z.object({
+    userId: z.string().startsWith("usr_").max(80)
+  });
+  const groupMemberParamsSchema = groupParamsSchema.extend({
+    userId: z.string().startsWith("usr_").max(80)
+  });
+
+  app.post("/v1/groups/:groupId/members", async (request) => {
+    const currentUser = authenticatedUser(request);
+    const params = groupParamsSchema.parse(request.params);
+    const body = groupMemberBodySchema.parse(request.body);
+    const group = await store.addGroupMember(
+      params.groupId,
+      currentUser.id,
+      body.userId
+    );
+    return { group: publicGroup(store, group, currentUser.id) };
+  });
+
+  app.delete("/v1/groups/:groupId/members/:userId", async (request) => {
+    const currentUser = authenticatedUser(request);
+    const params = groupMemberParamsSchema.parse(request.params);
+    const group = await store.removeGroupMember(
+      params.groupId,
+      currentUser.id,
+      params.userId
+    );
+    return { group: publicGroup(store, group, currentUser.id) };
+  });
+
+  app.delete("/v1/groups/:groupId", async (request, reply) => {
+    const currentUser = authenticatedUser(request);
+    const params = groupParamsSchema.parse(request.params);
+    await store.deleteGroup(params.groupId, currentUser.id);
+    return reply.status(204).send();
+  });
+
   const tokenRequestSchema = z.object({
     canPublish: z.boolean().default(true),
     canSubscribe: z.boolean().default(true)
@@ -235,22 +323,40 @@ export async function createApp(config: AppConfig) {
   }, async (request, reply) => {
     const currentUser = authenticatedUser(request);
     const params = z.object({
-      groupId: z.string().startsWith("usr_").max(80)
+      groupId: z.string().max(80).refine(
+        (value) => value.startsWith("usr_") || value.startsWith("grp_")
+      )
     }).parse(request.params);
     const body = tokenRequestSchema.parse(request.body);
-    if (!store.userById(params.groupId)) {
-      throw new StoreError("voice_peer_not_found", 404, "Voice peer not found");
-    }
-    if (!store.areFriends(currentUser.id, params.groupId)) {
-      throw new StoreError(
-        "voice_room_forbidden",
-        403,
-        "Both users must accept the friendship before joining voice"
-      );
+    let roomName: string;
+
+    if (params.groupId.startsWith("grp_")) {
+      const group = store.groupById(params.groupId);
+      if (!group) {
+        throw new StoreError("group_not_found", 404, "Group not found");
+      }
+      if (!group.memberIds.includes(currentUser.id)) {
+        throw new StoreError("group_membership_required", 403, "Group membership required");
+      }
+      roomName = `group-${createHash("sha256")
+        .update(group.id)
+        .digest("hex")
+        .slice(0, 32)}`;
+    } else {
+      if (!store.userById(params.groupId)) {
+        throw new StoreError("voice_peer_not_found", 404, "Voice peer not found");
+      }
+      if (!store.areFriends(currentUser.id, params.groupId)) {
+        throw new StoreError(
+          "voice_room_forbidden",
+          403,
+          "Both users must accept the friendship before joining voice"
+        );
+      }
+      const pair = [currentUser.id, params.groupId].sort().join(":");
+      roomName = `friends-${createHash("sha256").update(pair).digest("hex").slice(0, 32)}`;
     }
 
-    const pair = [currentUser.id, params.groupId].sort().join(":");
-    const roomName = `friends-${createHash("sha256").update(pair).digest("hex").slice(0, 32)}`;
     const token = new AccessToken(config.livekitApiKey, config.livekitApiSecret, {
       identity: currentUser.id,
       name: currentUser.displayName,
@@ -271,6 +377,73 @@ export async function createApp(config: AppConfig) {
       token: await token.toJwt(),
       roomName
     });
+  });
+
+  const isoDate = z.string().datetime({ offset: true });
+  const ridePointSchema = z.object({
+    latitude: z.number().min(-90).max(90),
+    longitude: z.number().min(-180).max(180),
+    elevationMeters: z.number().finite().optional(),
+    speedMetersPerSecond: z.number().min(0).max(100).optional(),
+    courseDegrees: z.number().min(-1).max(360).optional(),
+    horizontalAccuracyMeters: z.number().min(0).max(10_000).optional(),
+    heartRateBeatsPerMinute: z.number().int().min(20).max(260).optional(),
+    cadenceRPM: z.number().int().min(0).max(300).optional(),
+    timestamp: isoDate
+  });
+  const rideMetricsSchema = z.object({
+    distanceMeters: z.number().min(0),
+    movingDurationSeconds: z.number().min(0),
+    elapsedDurationSeconds: z.number().min(0),
+    averageSpeedMetersPerSecond: z.number().min(0).max(100),
+    maxSpeedMetersPerSecond: z.number().min(0).max(100),
+    elevationGainMeters: z.number().min(0),
+    averageHeartRate: z.number().int().min(20).max(260).optional(),
+    maxHeartRate: z.number().int().min(20).max(260).optional()
+  });
+  const rideSchema = z.object({
+    id: z.string().uuid(),
+    title: z.string().trim().min(1).max(80),
+    state: z.literal("finished"),
+    source: z.enum(["iPhone", "appleWatch", "merged"]),
+    startedAt: isoDate,
+    endedAt: isoDate.optional(),
+    points: z.array(ridePointSchema).max(100_000),
+    metrics: rideMetricsSchema
+  });
+  const rideParamsSchema = z.object({ rideId: z.string().uuid() });
+
+  app.get("/v1/rides", async (request) => {
+    const currentUser = authenticatedUser(request);
+    return { rides: store.ridesFor(currentUser.id).map(publicRide) };
+  });
+
+  app.get("/v1/rides/:rideId", async (request) => {
+    const currentUser = authenticatedUser(request);
+    const params = rideParamsSchema.parse(request.params);
+    const ride = store.rideFor(currentUser.id, params.rideId);
+    if (!ride) {
+      throw new StoreError("ride_not_found", 404, "Ride not found");
+    }
+    return { ride: publicRide(ride) };
+  });
+
+  app.put("/v1/rides/:rideId", async (request) => {
+    const currentUser = authenticatedUser(request);
+    const params = rideParamsSchema.parse(request.params);
+    const body = rideSchema.parse(request.body);
+    if (body.id !== params.rideId) {
+      throw new StoreError("ride_id_mismatch", 400, "Ride ID does not match URL");
+    }
+    const ride = await store.upsertRide(currentUser.id, body);
+    return { ride: publicRide(ride) };
+  });
+
+  app.delete("/v1/rides/:rideId", async (request, reply) => {
+    const currentUser = authenticatedUser(request);
+    const params = rideParamsSchema.parse(request.params);
+    await store.deleteRide(currentUser.id, params.rideId);
+    return reply.status(204).send();
   });
 
   app.setErrorHandler((error, request, reply) => {

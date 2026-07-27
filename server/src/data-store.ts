@@ -37,20 +37,70 @@ type FriendshipRecord = {
   createdAt: string;
 };
 
+export type GroupRecord = {
+  id: string;
+  name: string;
+  ownerId: string;
+  memberIds: string[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type RidePointRecord = {
+  latitude: number;
+  longitude: number;
+  elevationMeters?: number;
+  speedMetersPerSecond?: number;
+  courseDegrees?: number;
+  horizontalAccuracyMeters?: number;
+  heartRateBeatsPerMinute?: number;
+  cadenceRPM?: number;
+  timestamp: string;
+};
+
+export type RideMetricsRecord = {
+  distanceMeters: number;
+  movingDurationSeconds: number;
+  elapsedDurationSeconds: number;
+  averageSpeedMetersPerSecond: number;
+  maxSpeedMetersPerSecond: number;
+  elevationGainMeters: number;
+  averageHeartRate?: number;
+  maxHeartRate?: number;
+};
+
+export type RideRecord = {
+  id: string;
+  userId: string;
+  title: string;
+  state: "finished";
+  source: "iPhone" | "appleWatch" | "merged";
+  startedAt: string;
+  endedAt?: string;
+  points: RidePointRecord[];
+  metrics: RideMetricsRecord;
+  createdAt: string;
+  updatedAt: string;
+};
+
 type DatabaseState = {
-  version: 2;
+  version: 3;
   users: UserRecord[];
   sessions: SessionRecord[];
   friendRequests: FriendRequestRecord[];
   friendships: FriendshipRecord[];
+  groups: GroupRecord[];
+  rides: RideRecord[];
 };
 
 const emptyState = (): DatabaseState => ({
-  version: 2,
+  version: 3,
   users: [],
   sessions: [],
   friendRequests: [],
-  friendships: []
+  friendships: [],
+  groups: [],
+  rides: []
 });
 
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
@@ -333,12 +383,155 @@ export class DataStore {
     );
   }
 
+  groupsFor(userId: string): GroupRecord[] {
+    return this.state.groups
+      .filter((group) => group.memberIds.includes(userId))
+      .sort((first, second) => second.updatedAt.localeCompare(first.updatedAt));
+  }
+
+  groupById(groupId: string): GroupRecord | undefined {
+    return this.state.groups.find((group) => group.id === groupId);
+  }
+
+  async createGroup(ownerId: string, name: string): Promise<GroupRecord> {
+    return this.mutate(async () => {
+      this.requireUser(ownerId);
+      const now = new Date().toISOString();
+      const group: GroupRecord = {
+        id: `grp_${randomUUID()}`,
+        name,
+        ownerId,
+        memberIds: [ownerId],
+        createdAt: now,
+        updatedAt: now
+      };
+      this.state.groups.push(group);
+      return group;
+    });
+  }
+
+  async addGroupMember(
+    groupId: string,
+    requestingUserId: string,
+    memberId: string
+  ): Promise<GroupRecord> {
+    return this.mutate(async () => {
+      const group = this.requireGroup(groupId);
+      if (group.ownerId !== requestingUserId) {
+        throw new StoreError("group_owner_required", 403, "Only the group owner can add members");
+      }
+      this.requireUser(memberId);
+      if (!this.areFriends(requestingUserId, memberId)) {
+        throw new StoreError("group_member_must_be_friend", 403, "Group members must be friends");
+      }
+      if (group.memberIds.length >= 20 && !group.memberIds.includes(memberId)) {
+        throw new StoreError("group_member_limit", 409, "Group member limit reached");
+      }
+      if (!group.memberIds.includes(memberId)) {
+        group.memberIds.push(memberId);
+        group.updatedAt = new Date().toISOString();
+      }
+      return group;
+    });
+  }
+
+  async removeGroupMember(
+    groupId: string,
+    requestingUserId: string,
+    memberId: string
+  ): Promise<GroupRecord> {
+    return this.mutate(async () => {
+      const group = this.requireGroup(groupId);
+      const isSelf = requestingUserId === memberId;
+      if (group.ownerId !== requestingUserId && !isSelf) {
+        throw new StoreError("group_owner_required", 403, "Only the group owner can remove members");
+      }
+      if (memberId === group.ownerId) {
+        throw new StoreError("group_owner_cannot_leave", 409, "The owner must delete the group");
+      }
+      if (!group.memberIds.includes(requestingUserId)) {
+        throw new StoreError("group_membership_required", 403, "Group membership required");
+      }
+      group.memberIds = group.memberIds.filter((candidate) => candidate !== memberId);
+      group.updatedAt = new Date().toISOString();
+      return group;
+    });
+  }
+
+  async deleteGroup(groupId: string, requestingUserId: string): Promise<void> {
+    await this.mutate(async () => {
+      const group = this.requireGroup(groupId);
+      if (group.ownerId !== requestingUserId) {
+        throw new StoreError("group_owner_required", 403, "Only the group owner can delete the group");
+      }
+      this.state.groups = this.state.groups.filter((candidate) => candidate.id !== groupId);
+    });
+  }
+
+  async upsertRide(
+    userId: string,
+    ride: Omit<RideRecord, "userId" | "createdAt" | "updatedAt">
+  ): Promise<RideRecord> {
+    return this.mutate(async () => {
+      this.requireUser(userId);
+      const existing = this.state.rides.find((candidate) => candidate.id === ride.id);
+      if (existing && existing.userId !== userId) {
+        throw new StoreError("ride_id_conflict", 409, "Ride ID belongs to another account");
+      }
+      const now = new Date().toISOString();
+      if (existing) {
+        Object.assign(existing, ride, { updatedAt: now });
+        return existing;
+      }
+      const record: RideRecord = {
+        ...ride,
+        userId,
+        createdAt: now,
+        updatedAt: now
+      };
+      this.state.rides.push(record);
+      return record;
+    });
+  }
+
+  ridesFor(userId: string): RideRecord[] {
+    return this.state.rides
+      .filter((ride) => ride.userId === userId)
+      .sort((first, second) => second.startedAt.localeCompare(first.startedAt))
+      .slice(0, 200);
+  }
+
+  rideFor(userId: string, rideId: string): RideRecord | undefined {
+    return this.state.rides.find(
+      (ride) => ride.userId === userId && ride.id === rideId
+    );
+  }
+
+  async deleteRide(userId: string, rideId: string): Promise<void> {
+    await this.mutate(async () => {
+      if (!this.rideFor(userId, rideId)) {
+        throw new StoreError("ride_not_found", 404, "Ride not found");
+      }
+      this.state.rides = this.state.rides.filter(
+        (ride) => ride.userId !== userId || ride.id !== rideId
+      );
+    });
+  }
+
   private requireUser(userId: string): UserRecord {
     const user = this.userById(userId);
     if (!user) {
       throw new StoreError("user_not_found", 404, "User not found");
     }
     return user;
+  }
+
+  private requireGroup(groupId: string): GroupRecord {
+    const group = this.groupById(groupId);
+    if (!group) {
+      throw new StoreError("group_not_found", 404, "Group not found");
+    }
+    return group;
   }
 
   private createUser(displayName: string): UserRecord {
@@ -406,6 +599,16 @@ export class DataStore {
     this.state.sessions = this.state.sessions.filter(
       (session) => session.userId !== source.id
     );
+    this.state.groups = this.state.groups.map((group) => ({
+      ...group,
+      ownerId: group.ownerId === source.id ? target.id : group.ownerId,
+      memberIds: Array.from(new Set(group.memberIds.map(
+        (memberId) => memberId === source.id ? target.id : memberId
+      )))
+    }));
+    this.state.rides = this.state.rides.map((ride) => (
+      ride.userId === source.id ? { ...ride, userId: target.id } : ride
+    ));
     this.state.users = this.state.users.filter((user) => user.id !== source.id);
     return target;
   }
@@ -416,10 +619,12 @@ export class DataStore {
       sessions?: Array<Omit<SessionRecord, "expiresAt"> & { expiresAt?: string }>;
       friendRequests?: FriendRequestRecord[];
       friendships?: FriendshipRecord[];
+      groups?: GroupRecord[];
+      rides?: RideRecord[];
     };
     const now = Date.now();
     return {
-      version: 2,
+      version: 3,
       users: (legacy.users ?? []).map((user) => {
         const { deviceIdHash, ...currentUser } = user;
         return {
@@ -434,7 +639,9 @@ export class DataStore {
           ?? new Date(now + this.sessionTTLMilliseconds).toISOString()
       })),
       friendRequests: legacy.friendRequests ?? [],
-      friendships: legacy.friendships ?? []
+      friendships: legacy.friendships ?? [],
+      groups: legacy.groups ?? [],
+      rides: legacy.rides ?? []
     };
   }
 

@@ -1,14 +1,16 @@
 # BikeGoGo Server
 
-这个目录是 BikeGoGo 后端服务。当前已提供访客账户、Sign in with Apple、好友关系和
-受账户鉴权保护的 LiveKit token，后续继续补小队和骑行云同步。
+这个目录是 BikeGoGo 后端服务。当前已提供访客账户、Sign in with Apple、好友关系、
+小队、骑行云同步和受账户鉴权保护的 LiveKit token。
 
 - 设备绑定的访客账户和用户资料。
 - Apple JWT 验证、访客账户绑定和会话退出。
 - 好友申请、同意、拒绝和好友列表。
-- 需要登录的 LiveKit room token 签发。
-- 骑行记录与轨迹点同步。
-- APNs 推送。
+- 小队创建、邀请、移出、退出和解散。
+- 需要登录且校验好友/小队成员关系的 LiveKit room token 签发。
+- 骑行记录、指标和轨迹点同步。
+
+APNs 推送和 PostgreSQL 迁移是下一阶段工作。
 
 ## 本地启动
 
@@ -77,7 +79,16 @@ GET /v1/friends/requests
 POST /v1/friends/requests
 POST /v1/friends/requests/:requestId/accept
 POST /v1/friends/requests/:requestId/reject
+GET /v1/groups
+POST /v1/groups
+POST /v1/groups/:groupId/members
+DELETE /v1/groups/:groupId/members/:userId
+DELETE /v1/groups/:groupId
 POST /v1/voice/rooms/:groupId/token
+GET /v1/rides
+GET /v1/rides/:rideId
+PUT /v1/rides/:rideId
+DELETE /v1/rides/:rideId
 ```
 
 注意：LiveKit API Secret 只能放在后端，不能放进 iOS App。
@@ -87,13 +98,13 @@ POST /v1/voice/rooms/:groupId/token
 本地构建：
 
 ```bash
-docker build -t bikegogogo-server .
+docker build -t bikegogogo-server server
 ```
 
 运行：
 
 ```bash
-docker run --rm -p 8080:8080 --env-file .env \
+docker run --rm -p 8080:8080 --env-file server/.env \
   -v bikegogogo-data:/data bikegogogo-server
 ```
 

@@ -8,9 +8,9 @@
 
 /* Begin PBXBuildFile section */
 		04462BFBF4350FD47998AA1C /* BikeGoGoWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = D789EC4B5EFC2034AF69D464 /* BikeGoGoWatch.app */; };
+		0967886FA63E9BD02750D76D /* WatchConnectivity.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6AF28AA8384C081A7E1A311A /* WatchConnectivity.framework */; };
 		1A5500013014000000385B45 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 1A5500033014000000385B45 /* Assets.xcassets */; };
 		1A5500023014000000385B45 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 1A5500043014000000385B45 /* Assets.xcassets */; };
-		0967886FA63E9BD02750D76D /* WatchConnectivity.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6AF28AA8384C081A7E1A311A /* WatchConnectivity.framework */; };
 		1EDEC4791AD97A536EAEBA50 /* WatchRideView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA2F9917DE74AD1C088CAC0F /* WatchRideView.swift */; };
 		6FA2ABFE301312C000385B45 /* WatchSessionBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FA2ABF4301312BF00385B45 /* WatchSessionBridge.swift */; };
 		6FA2ABFF301312C000385B45 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FA2ABFA301312BF00385B45 /* AppState.swift */; };
@@ -28,12 +28,13 @@
 		6FA2AC0B301312C000385B45 /* AppConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FA2ABF6301312BF00385B45 /* AppConfiguration.swift */; };
 		6FA2AC0F3013216600385B45 /* BikeGoGoCore in Frameworks */ = {isa = PBXBuildFile; productRef = 6FA2AC0E3013216600385B45 /* BikeGoGoCore */; };
 		6FA2AC123013216600385B45 /* LiveKit in Frameworks */ = {isa = PBXBuildFile; productRef = 6FA2AC113013216600385B45 /* LiveKit */; };
+		9274A00DA9BDA00C5E70DCFE /* WatchSessionBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = C544184F65397BBDBF5AD188 /* WatchSessionBridge.swift */; };
+		9DD91701B7521C63CAC55E72 /* HealthKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A09BBFDAAB874D33AB3AA0A6 /* HealthKit.framework */; };
 		A1CC00013013200000385B45 /* AccountClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1CC00023013200000385B45 /* AccountClient.swift */; };
 		A1CC00033013200000385B45 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1CC00043013200000385B45 /* KeychainStore.swift */; };
 		A1CC00053013200000385B45 /* WatchWorkoutLauncher.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1CC00063013200000385B45 /* WatchWorkoutLauncher.swift */; };
 		A1CC00073013200000385B45 /* HealthKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A09BBFDAAB874D33AB3AA0A6 /* HealthKit.framework */; };
-		9274A00DA9BDA00C5E70DCFE /* WatchSessionBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = C544184F65397BBDBF5AD188 /* WatchSessionBridge.swift */; };
-		9DD91701B7521C63CAC55E72 /* HealthKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A09BBFDAAB874D33AB3AA0A6 /* HealthKit.framework */; };
+		A1CC00083013200000385B45 /* RideCloudClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1CC00093013200000385B45 /* RideCloudClient.swift */; };
 		A8855BA16382BA269B33C0B7 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 71EC0EB53A7BDC4854D82F65 /* Foundation.framework */; };
 		E3DCA650B91494233E8C3D26 /* WatchWorkoutManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4D1E2FA168DF5900F97CDDA /* WatchWorkoutManager.swift */; };
 		FA1EB89CCD61D0C4C5E84150 /* BikeGoGoWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B03FCC2AC7B99FDA19FD4EAA /* BikeGoGoWatchApp.swift */; };
@@ -64,9 +65,9 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		18C5BD8F50E4D1CB9CD35DA8 /* BikeGoGoWatch.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = BikeGoGoWatch.entitlements; sourceTree = "<group>"; };
 		1A5500033014000000385B45 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		1A5500043014000000385B45 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		18C5BD8F50E4D1CB9CD35DA8 /* BikeGoGoWatch.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = BikeGoGoWatch.entitlements; sourceTree = "<group>"; };
 		6AF28AA8384C081A7E1A311A /* WatchConnectivity.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WatchConnectivity.framework; path = System/Library/Frameworks/WatchConnectivity.framework; sourceTree = SDKROOT; };
 		6FA2ABD93013120600385B45 /* BikeGoGo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BikeGoGo.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		6FA2ABE7301312BF00385B45 /* RideDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RideDetailView.swift; sourceTree = "<group>"; };
@@ -85,11 +86,12 @@
 		6FA2ABFA301312BF00385B45 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
 		6FA2ABFB301312BF00385B45 /* BikeGoGoApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BikeGoGoApp.swift; sourceTree = "<group>"; };
 		6FA2ABFC301312BF00385B45 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		71EC0EB53A7BDC4854D82F65 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/WatchOS.platform/Developer/SDKs/WatchOS11.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
+		A09BBFDAAB874D33AB3AA0A6 /* HealthKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = HealthKit.framework; path = System/Library/Frameworks/HealthKit.framework; sourceTree = SDKROOT; };
 		A1CC00023013200000385B45 /* AccountClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountClient.swift; sourceTree = "<group>"; };
 		A1CC00043013200000385B45 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
 		A1CC00063013200000385B45 /* WatchWorkoutLauncher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchWorkoutLauncher.swift; sourceTree = "<group>"; };
-		71EC0EB53A7BDC4854D82F65 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/WatchOS.platform/Developer/SDKs/WatchOS11.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
-		A09BBFDAAB874D33AB3AA0A6 /* HealthKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = HealthKit.framework; path = System/Library/Frameworks/HealthKit.framework; sourceTree = SDKROOT; };
+		A1CC00093013200000385B45 /* RideCloudClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RideCloudClient.swift; sourceTree = "<group>"; };
 		A51D40E731FD4D25B923D101 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		B03FCC2AC7B99FDA19FD4EAA /* BikeGoGoWatchApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BikeGoGoWatchApp.swift; sourceTree = "<group>"; };
 		BA2F9917DE74AD1C088CAC0F /* WatchRideView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchRideView.swift; sourceTree = "<group>"; };
@@ -199,6 +201,7 @@
 				A1CC00023013200000385B45 /* AccountClient.swift */,
 				A1CC00043013200000385B45 /* KeychainStore.swift */,
 				A1CC00063013200000385B45 /* WatchWorkoutLauncher.swift */,
+				A1CC00093013200000385B45 /* RideCloudClient.swift */,
 				6FA2ABF2301312BF00385B45 /* VoiceRoomClient.swift */,
 				6FA2ABF3301312BF00385B45 /* VoiceTokenService.swift */,
 				6FA2ABF4301312BF00385B45 /* WatchSessionBridge.swift */,
@@ -246,7 +249,6 @@
 				18C5BD8F50E4D1CB9CD35DA8 /* BikeGoGoWatch.entitlements */,
 				A51D40E731FD4D25B923D101 /* Info.plist */,
 			);
-			name = Support;
 			path = Support;
 			sourceTree = "<group>";
 		};
@@ -326,7 +328,7 @@
 			mainGroup = 6FA2ABD03013120600385B45;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				6FA2AC0D3013216600385B45 /* XCLocalSwiftPackageReference "bikegogogo" */,
+				6FA2AC0D3013216600385B45 /* XCLocalSwiftPackageReference "../../bikegogogo" */,
 				6FA2AC103013216600385B45 /* XCRemoteSwiftPackageReference "client-sdk-swift" */,
 			);
 			preferredProjectObjectVersion = 77;
@@ -381,6 +383,7 @@
 				A1CC00013013200000385B45 /* AccountClient.swift in Sources */,
 				A1CC00033013200000385B45 /* KeychainStore.swift in Sources */,
 				A1CC00053013200000385B45 /* WatchWorkoutLauncher.swift in Sources */,
+				A1CC00083013200000385B45 /* RideCloudClient.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -684,7 +687,7 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		6FA2AC0D3013216600385B45 /* XCLocalSwiftPackageReference "bikegogogo" */ = {
+		6FA2AC0D3013216600385B45 /* XCLocalSwiftPackageReference "../../bikegogogo" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../../bikegogogo;
 		};

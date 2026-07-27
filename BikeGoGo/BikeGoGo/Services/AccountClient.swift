@@ -22,12 +22,23 @@ struct AppFriendRequest: Codable, Identifiable, Equatable {
     let user: AppUser
 }
 
+struct AppGroup: Codable, Identifiable, Equatable {
+    let id: String
+    let name: String
+    let owner: AppUser
+    let members: [AppUser]
+    let isOwner: Bool
+    let createdAt: String
+    let updatedAt: String
+}
+
 @MainActor
 final class AccountClient: ObservableObject {
     @Published private(set) var currentUser: AppUser?
     @Published private(set) var friends: [AppUser] = []
     @Published private(set) var incomingRequests: [AppFriendRequest] = []
     @Published private(set) var outgoingRequests: [AppFriendRequest] = []
+    @Published private(set) var groups: [AppGroup] = []
     @Published private(set) var accessToken: String?
     @Published private(set) var requiresAppleSignIn = false
     @Published private(set) var isWorking = false
@@ -240,6 +251,85 @@ final class AccountClient: ObservableObject {
         }
     }
 
+    func createGroup(name: String) async -> Bool {
+        guard !isWorking else { return false }
+        isWorking = true
+        defer { isWorking = false }
+
+        do {
+            let body = try JSONEncoder().encode(GroupNameBody(name: name))
+            let _: GroupResponse = try await request(
+                path: ["v1", "groups"],
+                method: "POST",
+                body: body
+            )
+            try await loadGroups()
+            statusMessage = "小队已创建"
+            return true
+        } catch {
+            errorMessage = accountMessage(for: error)
+            return false
+        }
+    }
+
+    func addMember(groupID: String, userID: String) async {
+        guard !isWorking else { return }
+        isWorking = true
+        defer { isWorking = false }
+
+        do {
+            let body = try JSONEncoder().encode(GroupMemberBody(userId: userID))
+            let _: GroupResponse = try await request(
+                path: ["v1", "groups", groupID, "members"],
+                method: "POST",
+                body: body
+            )
+            try await loadGroups()
+            statusMessage = "成员已加入小队"
+        } catch {
+            errorMessage = accountMessage(for: error)
+        }
+    }
+
+    func removeMember(groupID: String, userID: String) async {
+        guard !isWorking else { return }
+        isWorking = true
+        defer { isWorking = false }
+
+        do {
+            let _: GroupResponse = try await request(
+                path: ["v1", "groups", groupID, "members", userID],
+                method: "DELETE"
+            )
+            try await loadGroups()
+            statusMessage = "成员已移出小队"
+        } catch {
+            errorMessage = accountMessage(for: error)
+        }
+    }
+
+    func leaveGroup(groupID: String) async {
+        guard let userID = currentUser?.id else { return }
+        await removeMember(groupID: groupID, userID: userID)
+    }
+
+    func deleteGroup(groupID: String) async {
+        guard !isWorking else { return }
+        isWorking = true
+        defer { isWorking = false }
+
+        do {
+            try await requestNoContent(
+                path: ["v1", "groups", groupID],
+                method: "DELETE"
+            )
+            try await loadGroups()
+            statusMessage = "小队已解散"
+        } catch {
+            errorMessage = accountMessage(for: error)
+        }
+    }
+
     func dismissMessages() {
         errorMessage = nil
         statusMessage = nil
@@ -251,10 +341,17 @@ final class AccountClient: ObservableObject {
         let requests: FriendRequestsResponse = try await request(
             path: ["v1", "friends", "requests"]
         )
+        let groupList: GroupsResponse? = try? await request(path: ["v1", "groups"])
         currentUser = me.user
         friends = friendList.friends
         incomingRequests = requests.incoming
         outgoingRequests = requests.outgoing
+        groups = groupList?.groups ?? []
+    }
+
+    private func loadGroups() async throws {
+        let response: GroupsResponse = try await request(path: ["v1", "groups"])
+        groups = response.groups
     }
 
     private func request<Response: Decodable>(
@@ -328,6 +425,7 @@ final class AccountClient: ObservableObject {
         friends = []
         incomingRequests = []
         outgoingRequests = []
+        groups = []
         KeychainStore.delete(Self.accessTokenKey)
     }
 
@@ -363,6 +461,11 @@ final class AccountClient: ObservableObject {
             case "invalid_apple_identity": return "Apple 身份验证失败，请重新尝试。"
             case "apple_account_mismatch": return "当前账户已经连接了另一个 Apple ID。"
             case "apple_sign_in_required": return "请使用 Apple 登录以继续使用这个账户。"
+            case "group_owner_required": return "只有小队创建者可以执行这个操作。"
+            case "group_member_must_be_friend": return "只能邀请已经互相同意的好友。"
+            case "group_member_limit": return "每个小队最多 20 人。"
+            case "group_owner_cannot_leave": return "创建者需要解散小队，不能直接退出。"
+            case "group_membership_required": return "你已经不在这个小队中。"
             default: return "操作没有完成，请稍后重试。"
             }
         }
@@ -395,6 +498,14 @@ private struct FriendCodeBody: Encodable {
     let friendCode: String
 }
 
+private struct GroupNameBody: Encodable {
+    let name: String
+}
+
+private struct GroupMemberBody: Encodable {
+    let userId: String
+}
+
 private struct GuestLoginResponse: Decodable {
     let accessToken: String
     let user: AppUser
@@ -424,6 +535,14 @@ private struct FriendRequestActionResponse: Decodable {
     }
 
     let request: Request
+}
+
+private struct GroupsResponse: Decodable {
+    let groups: [AppGroup]
+}
+
+private struct GroupResponse: Decodable {
+    let group: AppGroup
 }
 
 private struct ServerErrorResponse: Decodable {

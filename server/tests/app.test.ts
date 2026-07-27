@@ -314,3 +314,199 @@ test("voice token endpoint requires an authenticated account", async () => {
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("group membership controls management and group voice access", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "bikegogogo-test-"));
+  const dataFile = path.join(directory, "data.json");
+  const app = await createApp(configFor(dataFile));
+
+  try {
+    const owner = (await app.inject({
+      method: "POST",
+      url: "/v1/auth/guest",
+      payload: { deviceId: "group-owner-device-id", displayName: "Group Owner" }
+    })).json();
+    const member = (await app.inject({
+      method: "POST",
+      url: "/v1/auth/guest",
+      payload: { deviceId: "group-member-device-id", displayName: "Group Member" }
+    })).json();
+    const outsider = (await app.inject({
+      method: "POST",
+      url: "/v1/auth/guest",
+      payload: { deviceId: "group-outsider-device", displayName: "Group Outsider" }
+    })).json();
+
+    const createGroup = await app.inject({
+      method: "POST",
+      url: "/v1/groups",
+      headers: { authorization: `Bearer ${owner.accessToken}` },
+      payload: { name: "Weekend Riders" }
+    });
+    assert.equal(createGroup.statusCode, 201);
+    const groupId = createGroup.json().group.id;
+
+    const addBeforeFriendship = await app.inject({
+      method: "POST",
+      url: `/v1/groups/${groupId}/members`,
+      headers: { authorization: `Bearer ${owner.accessToken}` },
+      payload: { userId: member.user.id }
+    });
+    assert.equal(addBeforeFriendship.statusCode, 403);
+
+    const friendRequest = await app.inject({
+      method: "POST",
+      url: "/v1/friends/requests",
+      headers: { authorization: `Bearer ${owner.accessToken}` },
+      payload: { friendCode: member.user.friendCode }
+    });
+    await app.inject({
+      method: "POST",
+      url: `/v1/friends/requests/${friendRequest.json().request.id}/accept`,
+      headers: { authorization: `Bearer ${member.accessToken}` }
+    });
+
+    const addMember = await app.inject({
+      method: "POST",
+      url: `/v1/groups/${groupId}/members`,
+      headers: { authorization: `Bearer ${owner.accessToken}` },
+      payload: { userId: member.user.id }
+    });
+    assert.equal(addMember.statusCode, 200);
+    assert.equal(addMember.json().group.members.length, 2);
+
+    const memberGroups = await app.inject({
+      method: "GET",
+      url: "/v1/groups",
+      headers: { authorization: `Bearer ${member.accessToken}` }
+    });
+    assert.equal(memberGroups.json().groups[0].id, groupId);
+    assert.equal(memberGroups.json().groups[0].isOwner, false);
+
+    const ownerVoice = await app.inject({
+      method: "POST",
+      url: `/v1/voice/rooms/${groupId}/token`,
+      headers: { authorization: `Bearer ${owner.accessToken}` },
+      payload: {}
+    });
+    const memberVoice = await app.inject({
+      method: "POST",
+      url: `/v1/voice/rooms/${groupId}/token`,
+      headers: { authorization: `Bearer ${member.accessToken}` },
+      payload: {}
+    });
+    assert.equal(ownerVoice.statusCode, 200);
+    assert.equal(memberVoice.statusCode, 200);
+    assert.equal(ownerVoice.json().roomName, memberVoice.json().roomName);
+    assert.match(ownerVoice.json().roomName, /^group-[a-f0-9]{32}$/);
+
+    const outsiderVoice = await app.inject({
+      method: "POST",
+      url: `/v1/voice/rooms/${groupId}/token`,
+      headers: { authorization: `Bearer ${outsider.accessToken}` },
+      payload: {}
+    });
+    assert.equal(outsiderVoice.statusCode, 403);
+
+    const memberAddsOutsider = await app.inject({
+      method: "POST",
+      url: `/v1/groups/${groupId}/members`,
+      headers: { authorization: `Bearer ${member.accessToken}` },
+      payload: { userId: outsider.user.id }
+    });
+    assert.equal(memberAddsOutsider.statusCode, 403);
+  } finally {
+    await app.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("finished rides sync per account and survive reload", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "bikegogogo-test-"));
+  const dataFile = path.join(directory, "data.json");
+  let app = await createApp(configFor(dataFile));
+
+  try {
+    const rider = (await app.inject({
+      method: "POST",
+      url: "/v1/auth/guest",
+      payload: { deviceId: "ride-sync-device-id", displayName: "Cloud Rider" }
+    })).json();
+    const other = (await app.inject({
+      method: "POST",
+      url: "/v1/auth/guest",
+      payload: { deviceId: "ride-other-device-id", displayName: "Other Rider" }
+    })).json();
+    const rideId = "61af5aa8-3b97-4538-b2dd-da986b183142";
+    const ride = {
+      id: rideId,
+      title: "Morning Ride",
+      state: "finished",
+      source: "merged",
+      startedAt: "2026-07-27T01:00:00.000Z",
+      endedAt: "2026-07-27T02:00:00.000Z",
+      points: [{
+        latitude: 31.2304,
+        longitude: 121.4737,
+        speedMetersPerSecond: 6.5,
+        heartRateBeatsPerMinute: 128,
+        timestamp: "2026-07-27T01:00:00.000Z"
+      }],
+      metrics: {
+        distanceMeters: 18_000,
+        movingDurationSeconds: 3_400,
+        elapsedDurationSeconds: 3_600,
+        averageSpeedMetersPerSecond: 5.29,
+        maxSpeedMetersPerSecond: 12.4,
+        elevationGainMeters: 86,
+        averageHeartRate: 128,
+        maxHeartRate: 151
+      }
+    };
+
+    const upload = await app.inject({
+      method: "PUT",
+      url: `/v1/rides/${rideId}`,
+      headers: { authorization: `Bearer ${rider.accessToken}` },
+      payload: ride
+    });
+    assert.equal(upload.statusCode, 200);
+    assert.equal(upload.json().ride.metrics.distanceMeters, 18_000);
+
+    const otherRead = await app.inject({
+      method: "GET",
+      url: `/v1/rides/${rideId}`,
+      headers: { authorization: `Bearer ${other.accessToken}` }
+    });
+    assert.equal(otherRead.statusCode, 404);
+
+    await app.close();
+    app = await createApp(configFor(dataFile));
+
+    const list = await app.inject({
+      method: "GET",
+      url: "/v1/rides",
+      headers: { authorization: `Bearer ${rider.accessToken}` }
+    });
+    assert.equal(list.statusCode, 200);
+    assert.equal(list.json().rides[0].id, rideId);
+    assert.equal(list.json().rides[0].points.length, 1);
+
+    const deletion = await app.inject({
+      method: "DELETE",
+      url: `/v1/rides/${rideId}`,
+      headers: { authorization: `Bearer ${rider.accessToken}` }
+    });
+    assert.equal(deletion.statusCode, 204);
+
+    const deletedRead = await app.inject({
+      method: "GET",
+      url: `/v1/rides/${rideId}`,
+      headers: { authorization: `Bearer ${rider.accessToken}` }
+    });
+    assert.equal(deletedRead.statusCode, 404);
+  } finally {
+    await app.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
