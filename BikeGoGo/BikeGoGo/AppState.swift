@@ -47,6 +47,23 @@ final class AppState: ObservableObject {
             localUserID = newIdentity
         }
         localDisplayName = "骑友-\(localUserID.prefix(4).uppercased())"
+        accountClient.beforeSignOut = { [weak accountClient] in
+            guard let accessToken = accountClient?.accessToken else { return }
+            await PushNotificationManager.shared.unregisterCurrentToken(
+                accessToken: accessToken
+            )
+        }
+
+        accountClient.$accessToken
+            .removeDuplicates()
+            .sink { accessToken in
+                Task { @MainActor in
+                    await PushNotificationManager.shared.configure(
+                        accessToken: accessToken
+                    )
+                }
+            }
+            .store(in: &cancellables)
 
         rideRecorder.$authorizationStatus
             .receive(on: RunLoop.main)
@@ -118,6 +135,7 @@ final class AppState: ObservableObject {
         }
 
         await accountClient.bootstrap(defaultDisplayName: localDisplayName)
+        await PushNotificationManager.shared.requestAuthorization()
         await loadStoredRides()
         await syncRides()
         watchBridge.activate()

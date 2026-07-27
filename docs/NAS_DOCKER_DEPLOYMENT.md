@@ -53,6 +53,11 @@ SESSION_TTL_DAYS=30
 POSTGRES_DB=bikegogogo
 POSTGRES_USER=bikegogogo
 POSTGRES_PASSWORD=<64位十六进制强密码>
+APNS_KEY_ID=CM2W9J6CX3
+APNS_TEAM_ID=FR9RTRV9BC
+APNS_TOPIC=com.sssnto.BikeGoGo
+APNS_ENVIRONMENT=sandbox
+APNS_KEY_PATH=/run/secrets/apns-private-key.p8
 ```
 
 注意：
@@ -65,6 +70,7 @@ POSTGRES_PASSWORD=<64位十六进制强密码>
 - PostgreSQL 不映射宿主机端口，只允许同一 Compose 网络中的后端访问。
 - 当前 API 仍从 `bikegogogo.json` 读取数据；PostgreSQL 已就绪，但要等数据迁移版本发布
   后才会成为主存储。
+- APNs `.p8` 通过只读文件挂载，不能写入 `.env` 或提交到 GitHub。
 
 ## Docker Run 部署
 
@@ -115,7 +121,19 @@ openssl rand -hex 32
 ```
 
 然后把 `.env` 里的 `LIVEKIT_API_KEY`、`LIVEKIT_API_SECRET` 和
-`POSTGRES_PASSWORD` 改成真实值。
+`POSTGRES_PASSWORD` 改成真实值，并把 APNs 私钥放到：
+
+```text
+deploy/nas/secrets/AuthKey_CM2W9J6CX3.p8
+```
+
+设置目录和文件权限：
+
+```bash
+mkdir -p secrets
+chmod 700 secrets
+chmod 600 secrets/AuthKey_CM2W9J6CX3.p8
+```
 
 `docker-compose.yml` 内容示例：
 
@@ -141,8 +159,14 @@ services:
       DATABASE_URL: "postgresql://${POSTGRES_USER:-bikegogogo}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/nas/.env}@postgres:5432/${POSTGRES_DB:-bikegogogo}"
       APPLE_BUNDLE_ID: "com.sssnto.BikeGoGo"
       SESSION_TTL_DAYS: "30"
+      APNS_KEY_ID: "${APNS_KEY_ID}"
+      APNS_TEAM_ID: "${APNS_TEAM_ID}"
+      APNS_TOPIC: "${APNS_TOPIC}"
+      APNS_ENVIRONMENT: "${APNS_ENVIRONMENT}"
+      APNS_KEY_PATH: "/run/secrets/apns-private-key.p8"
     volumes:
       - bikegogogo-data:/data
+      - "./secrets/AuthKey_${APNS_KEY_ID}.p8:/run/secrets/apns-private-key.p8:ro"
 
   postgres:
     image: postgres:16-alpine
@@ -178,6 +202,10 @@ SESSION_TTL_DAYS=30
 POSTGRES_DB=bikegogogo
 POSTGRES_USER=bikegogogo
 POSTGRES_PASSWORD=<openssl rand -hex 32 的输出>
+APNS_KEY_ID=CM2W9J6CX3
+APNS_TEAM_ID=FR9RTRV9BC
+APNS_TOPIC=com.sssnto.BikeGoGo
+APNS_ENVIRONMENT=sandbox
 ```
 
 启动：
@@ -277,6 +305,8 @@ POST  /v1/groups
 POST  /v1/groups/{groupId}/members
 DELETE /v1/groups/{groupId}/members/{userId}
 DELETE /v1/groups/{groupId}
+PUT   /v1/devices/push-token
+DELETE /v1/devices/push-token
 GET   /v1/rides
 GET   /v1/rides/{rideId}
 PUT   /v1/rides/{rideId}
@@ -329,6 +359,7 @@ Authorization: Bearer <accessToken>
 - LiveKit API Secret 只留在 NAS，iOS 获得的是 2 小时有效的房间 JWT。
 - `GET /health` 保持公开，其余业务接口按上述规则鉴权。
 - 当前 JSON 数据卷包含路线和账号信息，应纳入 NAS 加密备份；不要把数据卷暴露为网络共享。
+- APNs 只需要容器主动访问 Apple 的 TCP `443`，不新增任何公网入站端口。
 - 当前只适合小规模内测；扩大用户量前迁移 PostgreSQL，数据库只留在 Docker 内部网络。
 
 ## 反向代理建议

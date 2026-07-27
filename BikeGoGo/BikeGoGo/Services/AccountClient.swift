@@ -44,6 +44,7 @@ final class AccountClient: ObservableObject {
     @Published private(set) var isWorking = false
     @Published var errorMessage: String?
     @Published var statusMessage: String?
+    var beforeSignOut: (() async -> Void)?
 
     private let baseURL: URL
     private let session: URLSession
@@ -154,6 +155,7 @@ final class AccountClient: ObservableObject {
         isWorking = true
         defer { isWorking = false }
 
+        await beforeSignOut?()
         if accessToken != nil {
             do {
                 try await requestNoContent(

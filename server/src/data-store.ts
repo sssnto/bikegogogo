@@ -83,24 +83,34 @@ export type RideRecord = {
   updatedAt: string;
 };
 
+export type PushTokenRecord = {
+  token: string;
+  userId: string;
+  environment: "sandbox" | "production";
+  createdAt: string;
+  updatedAt: string;
+};
+
 type DatabaseState = {
-  version: 3;
+  version: 4;
   users: UserRecord[];
   sessions: SessionRecord[];
   friendRequests: FriendRequestRecord[];
   friendships: FriendshipRecord[];
   groups: GroupRecord[];
   rides: RideRecord[];
+  pushTokens: PushTokenRecord[];
 };
 
 const emptyState = (): DatabaseState => ({
-  version: 3,
+  version: 4,
   users: [],
   sessions: [],
   friendRequests: [],
   friendships: [],
   groups: [],
-  rides: []
+  rides: [],
+  pushTokens: []
 });
 
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
@@ -250,6 +260,75 @@ export class DataStore {
       user.updatedAt = new Date().toISOString();
       return user;
     });
+  }
+
+  async registerPushToken(
+    userId: string,
+    token: string,
+    environment: PushTokenRecord["environment"]
+  ): Promise<void> {
+    await this.mutate(async () => {
+      this.requireUser(userId);
+      const now = new Date().toISOString();
+      const existing = this.state.pushTokens.find(
+        (record) => record.token === token && record.environment === environment
+      );
+
+      if (existing) {
+        existing.userId = userId;
+        existing.updatedAt = now;
+        return;
+      }
+
+      this.state.pushTokens.push({
+        token,
+        userId,
+        environment,
+        createdAt: now,
+        updatedAt: now
+      });
+    });
+  }
+
+  async removePushToken(
+    userId: string,
+    token: string,
+    environment?: PushTokenRecord["environment"]
+  ): Promise<void> {
+    await this.mutate(async () => {
+      this.state.pushTokens = this.state.pushTokens.filter(
+        (record) =>
+          record.userId !== userId
+          || record.token !== token
+          || (environment !== undefined && record.environment !== environment)
+      );
+    });
+  }
+
+  async removePushTokens(
+    tokens: string[],
+    environment: PushTokenRecord["environment"]
+  ): Promise<void> {
+    if (tokens.length === 0) return;
+    const invalidTokens = new Set(tokens);
+    await this.mutate(async () => {
+      this.state.pushTokens = this.state.pushTokens.filter(
+        (record) =>
+          record.environment !== environment || !invalidTokens.has(record.token)
+      );
+    });
+  }
+
+  pushTokensFor(
+    userId: string,
+    environment: PushTokenRecord["environment"]
+  ): string[] {
+    return this.state.pushTokens
+      .filter(
+        (record) =>
+          record.userId === userId && record.environment === environment
+      )
+      .map((record) => record.token);
   }
 
   friendsFor(userId: string): UserRecord[] {
@@ -609,6 +688,17 @@ export class DataStore {
     this.state.rides = this.state.rides.map((ride) => (
       ride.userId === source.id ? { ...ride, userId: target.id } : ride
     ));
+    this.state.pushTokens = this.state.pushTokens
+      .map((record) => (
+        record.userId === source.id ? { ...record, userId: target.id } : record
+      ))
+      .filter((record, index, records) =>
+        records.findIndex(
+          (candidate) =>
+            candidate.token === record.token
+            && candidate.environment === record.environment
+        ) === index
+      );
     this.state.users = this.state.users.filter((user) => user.id !== source.id);
     return target;
   }
@@ -621,10 +711,11 @@ export class DataStore {
       friendships?: FriendshipRecord[];
       groups?: GroupRecord[];
       rides?: RideRecord[];
+      pushTokens?: PushTokenRecord[];
     };
     const now = Date.now();
     return {
-      version: 3,
+      version: 4,
       users: (legacy.users ?? []).map((user) => {
         const { deviceIdHash, ...currentUser } = user;
         return {
@@ -641,7 +732,8 @@ export class DataStore {
       friendRequests: legacy.friendRequests ?? [],
       friendships: legacy.friendships ?? [],
       groups: legacy.groups ?? [],
-      rides: legacy.rides ?? []
+      rides: legacy.rides ?? [],
+      pushTokens: legacy.pushTokens ?? []
     };
   }
 

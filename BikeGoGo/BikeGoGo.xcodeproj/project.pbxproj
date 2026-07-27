@@ -35,6 +35,7 @@
 		A1CC00053013200000385B45 /* WatchWorkoutLauncher.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1CC00063013200000385B45 /* WatchWorkoutLauncher.swift */; };
 		A1CC00073013200000385B45 /* HealthKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A09BBFDAAB874D33AB3AA0A6 /* HealthKit.framework */; };
 		A1CC00083013200000385B45 /* RideCloudClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1CC00093013200000385B45 /* RideCloudClient.swift */; };
+		A1CC000A3013200000385B45 /* PushNotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1CC000B3013200000385B45 /* PushNotificationManager.swift */; };
 		A8855BA16382BA269B33C0B7 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 71EC0EB53A7BDC4854D82F65 /* Foundation.framework */; };
 		E3DCA650B91494233E8C3D26 /* WatchWorkoutManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4D1E2FA168DF5900F97CDDA /* WatchWorkoutManager.swift */; };
 		FA1EB89CCD61D0C4C5E84150 /* BikeGoGoWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B03FCC2AC7B99FDA19FD4EAA /* BikeGoGoWatchApp.swift */; };
@@ -92,6 +93,7 @@
 		A1CC00043013200000385B45 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
 		A1CC00063013200000385B45 /* WatchWorkoutLauncher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchWorkoutLauncher.swift; sourceTree = "<group>"; };
 		A1CC00093013200000385B45 /* RideCloudClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RideCloudClient.swift; sourceTree = "<group>"; };
+		A1CC000B3013200000385B45 /* PushNotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushNotificationManager.swift; sourceTree = "<group>"; };
 		A51D40E731FD4D25B923D101 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		B03FCC2AC7B99FDA19FD4EAA /* BikeGoGoWatchApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BikeGoGoWatchApp.swift; sourceTree = "<group>"; };
 		BA2F9917DE74AD1C088CAC0F /* WatchRideView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchRideView.swift; sourceTree = "<group>"; };
@@ -202,6 +204,7 @@
 				A1CC00043013200000385B45 /* KeychainStore.swift */,
 				A1CC00063013200000385B45 /* WatchWorkoutLauncher.swift */,
 				A1CC00093013200000385B45 /* RideCloudClient.swift */,
+				A1CC000B3013200000385B45 /* PushNotificationManager.swift */,
 				6FA2ABF2301312BF00385B45 /* VoiceRoomClient.swift */,
 				6FA2ABF3301312BF00385B45 /* VoiceTokenService.swift */,
 				6FA2ABF4301312BF00385B45 /* WatchSessionBridge.swift */,
@@ -384,6 +387,7 @@
 				A1CC00033013200000385B45 /* KeychainStore.swift in Sources */,
 				A1CC00053013200000385B45 /* WatchWorkoutLauncher.swift in Sources */,
 				A1CC00083013200000385B45 /* RideCloudClient.swift in Sources */,
+				A1CC000A3013200000385B45 /* PushNotificationManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

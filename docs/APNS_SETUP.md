@@ -8,7 +8,7 @@ APNs 是 Apple Push Notification service。BikeGoGo 后端需要向 APNs 证明�
 创建 APNs Key 后会得到三项配置：
 
 ```text
-APNS_KEY_ID=Apple 生成的 10 位 Key ID
+APNS_KEY_ID=CM2W9J6CX3
 APNS_TEAM_ID=FR9RTRV9BC
 APNS_KEY_PATH=/run/secrets/apns-private-key.p8
 ```
@@ -61,10 +61,10 @@ Watch App 暂时不需要单独创建推送 Key；第一版通知先送到 iPhon
 下载文件通常叫：
 
 ```text
-AuthKey_ABCDEFGHIJ.p8
+AuthKey_CM2W9J6CX3.p8
 ```
 
-其中 `ABCDEFGHIJ` 就是 Key ID。下载完成前不要关闭页面。
+其中 `CM2W9J6CX3` 就是本项目的 Key ID。下载完成前不要关闭页面。
 
 ### Sandbox 与 Production
 
@@ -104,13 +104,13 @@ chmod 700 /volume1/docker/bikegogogo/secrets
 通过 NAS 文件管理器或 `scp` 上传：
 
 ```text
-AuthKey_ABCDEFGHIJ.p8
+AuthKey_CM2W9J6CX3.p8
 ```
 
 上传后：
 
 ```bash
-chmod 600 /volume1/docker/bikegogogo/secrets/AuthKey_ABCDEFGHIJ.p8
+chmod 600 /volume1/docker/bikegogogo/secrets/AuthKey_CM2W9J6CX3.p8
 ```
 
 要求：
@@ -120,9 +120,9 @@ chmod 600 /volume1/docker/bikegogogo/secrets/AuthKey_ABCDEFGHIJ.p8
 - NAS 备份应加密。
 - 不要把私钥内容复制进 `.env`，多行私钥容易损坏，也更容易泄漏。
 
-## 6. 后续 Compose 挂载方式
+## 6. Compose 挂载方式
 
-后端 APNs 模块完成后，会在 Compose 中加入类似配置：
+仓库中的 `deploy/nas/docker-compose.yml` 已经包含以下配置：
 
 ```yaml
 services:
@@ -140,7 +140,7 @@ services:
 `.env` 只写非私钥配置：
 
 ```bash
-APNS_KEY_ID=ABCDEFGHIJ
+APNS_KEY_ID=CM2W9J6CX3
 APNS_TEAM_ID=FR9RTRV9BC
 APNS_TOPIC=com.sssnto.BikeGoGo
 APNS_ENVIRONMENT=sandbox
@@ -161,19 +161,44 @@ APNS_ENVIRONMENT=sandbox
 
 NAS 只需允许容器主动访问外网 TCP `443`，不需要为 APNs 增加任何入站端口。
 
-## 8. 真机测试前还缺什么
+## 8. 部署与真机测试
 
-仅有 `.p8` 还不能收到通知。后续代码需要完成：
+代码已完成以下链路：
 
-1. iOS 请求用户允许通知。
-2. iOS 调用 `registerForRemoteNotifications()`。
-3. iOS 获取 device token，并通过鉴权 API 上传到 BikeGoGo 后端。
-4. 后端按用户保存 Sandbox/Production device token。
-5. 好友申请或小队邀请时，后端向 APNs 发送普通 `alert` 推送。
-6. 用户退出账号时解绑 token；APNs 返回无效 token 时及时删除。
+1. iOS 登录后请求用户允许通知并向 APNs 注册。
+2. device token 通过 Bearer 鉴权接口绑定当前 BikeGoGo 账号。
+3. 后端按 Sandbox/Production 环境隔离保存 token。
+4. 好友申请、好友申请通过、小队邀请会发送普通 `alert` 推送。
+5. 账号退出时解绑 token；APNs 返回无效 token 时自动删除。
 
-完成后可使用 [Apple Push Notifications Console](https://developer.apple.com/notifications/push-notifications-console/)
-向真机 device token 发送测试通知，并查看开发环境投递日志。
+在 NAS 的 Compose 目录执行：
+
+```bash
+mkdir -p secrets
+chmod 700 secrets
+# 用 NAS 文件管理器或 scp 把下载文件放到这里
+chmod 600 secrets/AuthKey_CM2W9J6CX3.p8
+cp .env.example .env
+docker compose pull
+docker compose up -d --force-recreate
+docker compose logs --tail=100 bikegogogo-server
+```
+
+然后用 Xcode 以 Debug 配置安装到真机：
+
+1. 首次打开允许 BikeGoGo 发送通知。
+2. 保持 `APNS_ENVIRONMENT=sandbox`。
+3. 用另一台手机上的 BikeGoGo 账号发送好友申请。
+4. 锁屏或把接收手机上的 BikeGoGo 切到后台。
+5. 接收手机应看到“新的好友申请”；通过申请后，发送方应看到“好友申请已通过”。
+6. 创建小队并添加好友后，该好友应看到“小队邀请”。
+
+也可以使用 [Apple Push Notifications Console](https://developer.apple.com/notifications/push-notifications-console/)
+做 APNs 层面的独立测试。业务链路测试仍建议使用两台安装了 BikeGoGo 的真机。
+
+Debug 真机使用 Sandbox；TestFlight/App Store 使用 Production。当前 Key 是 Sandbox，
+所以发布 TestFlight 前必须再创建 Production Key，切换 `.p8` 和
+`APNS_ENVIRONMENT=production` 后重启后端。
 
 ## 9. 常见问题
 

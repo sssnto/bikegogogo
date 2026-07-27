@@ -10,6 +10,10 @@ import {
   createAppleIdentityVerifier,
   type AppleIdentityVerifier
 } from "./apple-auth.js";
+import type {
+  NotificationSender,
+  PushNotification
+} from "./apns.js";
 import {
   DataStore,
   StoreError,
@@ -28,6 +32,7 @@ export type AppConfig = {
   appleBundleId: string;
   sessionTTLDays: number;
   appleIdentityVerifier?: AppleIdentityVerifier;
+  notificationSender?: NotificationSender;
 };
 
 const publicUser = (user: UserRecord) => ({
@@ -115,6 +120,32 @@ export async function createApp(config: AppConfig) {
     return authenticatedUser(request);
   };
 
+  const notifyUser = async (
+    userId: string,
+    notification: PushNotification
+  ): Promise<void> => {
+    const sender = config.notificationSender;
+    if (!sender) return;
+    const tokens = store.pushTokensFor(userId, sender.environment);
+    if (tokens.length === 0) return;
+
+    try {
+      const result = await sender.send(tokens, notification);
+      await store.removePushTokens(result.invalidTokens, sender.environment);
+      if (result.failedCount > 0) {
+        app.log.warn(
+          { failedCount: result.failedCount, event: notification.event },
+          "Some push notifications were rejected by APNs"
+        );
+      }
+    } catch (error) {
+      app.log.error(
+        { err: error, event: notification.event },
+        "Push notification delivery failed"
+      );
+    }
+  };
+
   app.get("/health", async () => ({
     ok: true,
     service: "bikegogogo-server"
@@ -184,6 +215,33 @@ export async function createApp(config: AppConfig) {
     return { user: publicUser(user) };
   });
 
+  const pushTokenSchema = z.object({
+    token: z.string().trim().min(32).max(400).regex(/^[a-fA-F0-9]+$/),
+    environment: z.enum(["sandbox", "production"])
+  });
+
+  app.put("/v1/devices/push-token", async (request, reply) => {
+    const currentUser = authenticatedUser(request);
+    const body = pushTokenSchema.parse(request.body);
+    await store.registerPushToken(
+      currentUser.id,
+      body.token.toLowerCase(),
+      body.environment
+    );
+    return reply.status(204).send();
+  });
+
+  app.delete("/v1/devices/push-token", async (request, reply) => {
+    const currentUser = authenticatedUser(request);
+    const body = pushTokenSchema.parse(request.body);
+    await store.removePushToken(
+      currentUser.id,
+      body.token.toLowerCase(),
+      body.environment
+    );
+    return reply.status(204).send();
+  });
+
   app.get("/v1/friends", async (request) => {
     const currentUser = authenticatedUser(request);
     return { friends: store.friendsFor(currentUser.id).map(publicUser) };
@@ -223,6 +281,21 @@ export async function createApp(config: AppConfig) {
     const otherUserId = friendRequest.fromUserId === currentUser.id
       ? friendRequest.toUserId
       : friendRequest.fromUserId;
+    if (friendRequest.status === "accepted") {
+      await notifyUser(friendRequest.fromUserId, {
+        title: "好友申请已通过",
+        body: `${currentUser.displayName} 已成为你的好友`,
+        event: "friend_accepted",
+        entityId: currentUser.id
+      });
+    } else {
+      await notifyUser(friendRequest.toUserId, {
+        title: "新的好友申请",
+        body: `${currentUser.displayName} 想添加你为好友`,
+        event: "friend_request",
+        entityId: friendRequest.id
+      });
+    }
     return reply.status(friendRequest.status === "accepted" ? 200 : 201).send({
       request: publicFriendRequest(
         friendRequest,
@@ -246,6 +319,14 @@ export async function createApp(config: AppConfig) {
           currentUser.id,
           action
         );
+        if (action === "accept") {
+          await notifyUser(friendRequest.fromUserId, {
+            title: "好友申请已通过",
+            body: `${currentUser.displayName} 已成为你的好友`,
+            event: "friend_accepted",
+            entityId: currentUser.id
+          });
+        }
         return { request: { id: friendRequest.id, status: friendRequest.status } };
       }
     );
@@ -287,11 +368,21 @@ export async function createApp(config: AppConfig) {
     const currentUser = authenticatedUser(request);
     const params = groupParamsSchema.parse(request.params);
     const body = groupMemberBodySchema.parse(request.body);
+    const existingGroup = store.groupById(params.groupId);
+    const wasAlreadyMember = existingGroup?.memberIds.includes(body.userId) ?? false;
     const group = await store.addGroupMember(
       params.groupId,
       currentUser.id,
       body.userId
     );
+    if (!wasAlreadyMember) {
+      await notifyUser(body.userId, {
+        title: "小队邀请",
+        body: `${currentUser.displayName} 邀请你加入「${group.name}」`,
+        event: "group_invitation",
+        entityId: group.id
+      });
+    }
     return { group: publicGroup(store, group, currentUser.id) };
   });
 

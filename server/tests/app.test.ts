@@ -6,8 +6,15 @@ import path from "node:path";
 import test from "node:test";
 
 import { createApp } from "../src/app.js";
+import type {
+  NotificationSender,
+  PushNotification
+} from "../src/apns.js";
 
-const configFor = (dataFile: string) => ({
+const configFor = (
+  dataFile: string,
+  notificationSender?: NotificationSender
+) => ({
   livekitUrl: "wss://example.livekit.cloud",
   livekitApiKey: "API_TEST_KEY",
   livekitApiSecret: "test-secret",
@@ -15,12 +22,119 @@ const configFor = (dataFile: string) => ({
   dataFile,
   appleBundleId: "com.sssnto.BikeGoGo",
   sessionTTLDays: 30,
+  notificationSender,
   appleIdentityVerifier: async (identityToken: string) => ({
     subject: identityToken.startsWith("b")
       ? "second-apple-user-subject"
       : "apple-user-subject",
     email: "rider@example.com"
   })
+});
+
+test("push tokens receive friend and group notifications for their account", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "bikegogogo-test-"));
+  const dataFile = path.join(directory, "data.json");
+  const deliveries: Array<{ tokens: string[]; notification: PushNotification }> = [];
+  const notificationSender: NotificationSender = {
+    environment: "sandbox",
+    async send(tokens, notification) {
+      deliveries.push({ tokens, notification });
+      return { invalidTokens: [], failedCount: 0 };
+    }
+  };
+  const app = await createApp(configFor(dataFile, notificationSender));
+
+  try {
+    const owner = (await app.inject({
+      method: "POST",
+      url: "/v1/auth/guest",
+      payload: { deviceId: "push-owner-device-id", displayName: "Push Owner" }
+    })).json();
+    const member = (await app.inject({
+      method: "POST",
+      url: "/v1/auth/guest",
+      payload: { deviceId: "push-member-device-id", displayName: "Push Member" }
+    })).json();
+    const ownerToken = "a".repeat(64);
+    const memberToken = "b".repeat(64);
+
+    for (const registration of [
+      { session: owner, token: ownerToken, environment: "sandbox" },
+      { session: member, token: memberToken, environment: "sandbox" },
+      { session: member, token: "c".repeat(64), environment: "production" }
+    ]) {
+      const response = await app.inject({
+        method: "PUT",
+        url: "/v1/devices/push-token",
+        headers: { authorization: `Bearer ${registration.session.accessToken}` },
+        payload: {
+          token: registration.token,
+          environment: registration.environment
+        }
+      });
+      assert.equal(response.statusCode, 204);
+    }
+
+    const friendRequest = await app.inject({
+      method: "POST",
+      url: "/v1/friends/requests",
+      headers: { authorization: `Bearer ${owner.accessToken}` },
+      payload: { friendCode: member.user.friendCode }
+    });
+    assert.equal(friendRequest.statusCode, 201);
+    assert.deepEqual(deliveries[0].tokens, [memberToken]);
+    assert.equal(deliveries[0].notification.event, "friend_request");
+
+    const accepted = await app.inject({
+      method: "POST",
+      url: `/v1/friends/requests/${friendRequest.json().request.id}/accept`,
+      headers: { authorization: `Bearer ${member.accessToken}` }
+    });
+    assert.equal(accepted.statusCode, 200);
+    assert.deepEqual(deliveries[1].tokens, [ownerToken]);
+    assert.equal(deliveries[1].notification.event, "friend_accepted");
+
+    const group = await app.inject({
+      method: "POST",
+      url: "/v1/groups",
+      headers: { authorization: `Bearer ${owner.accessToken}` },
+      payload: { name: "Push Riders" }
+    });
+    const added = await app.inject({
+      method: "POST",
+      url: `/v1/groups/${group.json().group.id}/members`,
+      headers: { authorization: `Bearer ${owner.accessToken}` },
+      payload: { userId: member.user.id }
+    });
+    assert.equal(added.statusCode, 200);
+    assert.deepEqual(deliveries[2].tokens, [memberToken]);
+    assert.equal(deliveries[2].notification.event, "group_invitation");
+
+    const unregistered = await app.inject({
+      method: "DELETE",
+      url: "/v1/devices/push-token",
+      headers: { authorization: `Bearer ${member.accessToken}` },
+      payload: { token: memberToken, environment: "sandbox" }
+    });
+    assert.equal(unregistered.statusCode, 204);
+
+    const secondGroup = await app.inject({
+      method: "POST",
+      url: "/v1/groups",
+      headers: { authorization: `Bearer ${owner.accessToken}` },
+      payload: { name: "Silent Riders" }
+    });
+    await app.inject({
+      method: "POST",
+      url: `/v1/groups/${secondGroup.json().group.id}/members`,
+      headers: { authorization: `Bearer ${owner.accessToken}` },
+      payload: { userId: member.user.id }
+    });
+    assert.equal(deliveries.length, 3);
+  } finally {
+    await app.close();
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("guest users can request and accept friendship", async () => {

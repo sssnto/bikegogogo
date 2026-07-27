@@ -130,6 +130,34 @@ DELETE /v1/groups/{groupId}
 只有创建者可以邀请、移出成员或解散小队；被邀请人必须已经是创建者的好友。普通成员
 可以通过删除自己的成员关系退出小队。每个小队当前最多 20 人。
 
+## 推送设备
+
+iOS 获取 APNs device token 后，将它绑定到当前登录账号：
+
+```http
+PUT /v1/devices/push-token
+Authorization: Bearer <accessToken>
+Content-Type: application/json
+```
+
+```json
+{
+  "token": "APNs 返回的十六进制 device token",
+  "environment": "sandbox"
+}
+```
+
+退出账号前使用相同请求体调用：
+
+```http
+DELETE /v1/devices/push-token
+Authorization: Bearer <accessToken>
+```
+
+`sandbox` 用于 Xcode Debug 真机，`production` 用于 TestFlight/App Store。Token 只能绑定
+一个 BikeGoGo 账号；重新绑定会自动转移归属。好友申请、申请通过和小队邀请会触发
+普通 APNs alert。推送失败不会回滚业务操作，APNs 确认失效的 Token 会自动删除。
+
 ## 语音
 
 客户端通过后端换取 LiveKit token：

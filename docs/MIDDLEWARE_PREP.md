@@ -88,13 +88,15 @@ API Secret 只填到 `server/.env`，不要写进 iOS App。
 - 小队语音邀请。
 - 后续 VoIP 语音提醒。
 
-建议优先级：需要好友申请/小队邀请通知时启用，不阻塞当前双机语音和云同步测试。
+当前状态：Sandbox Key 与普通社交通知链路已完成，等待双真机验收。
 
-下一步需要你准备：
+当前配置：
 
-- 一个 APNs `.p8` Key。
-- Key ID。
+- Sandbox APNs `.p8` Key。
+- Key ID `CM2W9J6CX3`。
 - Team ID `FR9RTRV9BC`。
+
+TestFlight 前还需要创建 Production APNs Key，并把 NAS 环境切换为 `production`。
 
 `.p8` 私钥不要粘贴到聊天或提交到 Git，应通过 NAS secret 文件或受保护环境变量挂载。
 完整操作见 [APNs 私钥申请与保管](APNS_SETUP.md)。
