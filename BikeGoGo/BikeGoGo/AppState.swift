@@ -35,6 +35,10 @@ final class AppState: ObservableObject {
     @Published private(set) var isSendingTeamSOS = false
     @Published private(set) var teamRideMemberStatuses: [TeamRideMemberStatus] = []
     @Published private(set) var teamSafetyAlertsEnabled = true
+    @Published private(set) var teamMeetingPoint: GroupMeetingPoint?
+    @Published private(set) var isUpdatingTeamMeetingPoint = false
+    @Published private(set) var referenceRideID: UUID?
+    @Published private(set) var routeDeviationEvaluation: RouteDeviationEvaluation?
 
     private let rideStore = LocalRideStore()
     private let rideCloudClient = RideCloudClient()
@@ -56,6 +60,7 @@ final class AppState: ObservableObject {
     private var locationSharingRefreshTask: Task<Void, Never>?
     private var lastLocationShareSentAt: Date?
     private var teamSafetyMonitor = TeamRideSafetyMonitor()
+    private var routeDeviationMonitor = RouteDeviationMonitor()
     private static let teamSafetyAlertsDefaultsKey = "bikegogo.teamSafetyAlertsEnabled"
 
     init() {
@@ -161,6 +166,7 @@ final class AppState: ObservableObject {
                 self.currentRide.metrics.elapsedDurationSeconds = self.rideElapsedDuration()
                 await self.persistActiveRide()
                 await self.publishRideLocationIfNeeded(points.last)
+                await self.evaluateRouteDeviation(points.last)
             }
         }
 
@@ -281,6 +287,7 @@ final class AppState: ObservableObject {
             try? await rideStore.clearActiveRide()
         }
         watchBridge.sendRideState(.finished)
+        clearReferenceRoute()
     }
 
     func discardCurrentRide() {
@@ -294,6 +301,7 @@ final class AppState: ObservableObject {
         activeElapsedSeconds = 0
         activeSegmentStartedAt = nil
         recorderNeedsRestart = false
+        clearReferenceRoute()
         Task {
             await stopRideLocationSharing()
             try? await rideStore.clearActiveRide()
@@ -459,9 +467,42 @@ final class AppState: ObservableObject {
         watchBridge.sendMuteState(voiceClient.isMuted)
     }
 
+    func callActiveRideTeam() async {
+        guard let group = activeLocationSharingGroup else {
+            rideAlertMessage = "请先选择一个小队并开启位置共享。"
+            return
+        }
+        await startVoiceCall(targetID: group.id)
+        if let voiceCallMessage {
+            rideAlertMessage = voiceCallMessage
+            self.voiceCallMessage = nil
+        }
+    }
+
     var activeLocationSharingGroup: AppGroup? {
         guard let locationSharingGroupID else { return nil }
         return accountClient.groups.first { $0.id == locationSharingGroupID }
+    }
+
+    var referenceRide: RideSession? {
+        guard let referenceRideID else { return nil }
+        return recentRides.first { $0.id == referenceRideID }
+    }
+
+    func selectReferenceRoute(_ ride: RideSession) {
+        guard ride.points.count > 1 else {
+            rideAlertMessage = "这条历史骑行没有足够的轨迹点。"
+            return
+        }
+        referenceRideID = ride.id
+        routeDeviationMonitor.reset()
+        routeDeviationEvaluation = nil
+    }
+
+    func clearReferenceRoute() {
+        referenceRideID = nil
+        routeDeviationMonitor.reset()
+        routeDeviationEvaluation = nil
     }
 
     func sendTeamSOS(groupID: String) async {
@@ -544,6 +585,7 @@ final class AppState: ObservableObject {
         lastLocationShareSentAt = nil
         await publishRideLocationIfNeeded(currentRide.points.last, force: true)
         await refreshTeammateLocations()
+        await refreshTeamMeetingPoint()
         startLocationSharingRefreshLoop()
     }
 
@@ -559,6 +601,7 @@ final class AppState: ObservableObject {
         lastLocationShareSentAt = nil
         teamSafetyMonitor.reset()
         teamRideMemberStatuses = []
+        teamMeetingPoint = nil
 
         guard let groupID, let accessToken else { return }
         do {
@@ -568,6 +611,60 @@ final class AppState: ObservableObject {
             )
         } catch {
             print("Stopping ride location sharing failed: \(error.localizedDescription)")
+        }
+    }
+
+    func setTeamMeetingPoint(groupID: String) async {
+        guard let group = accountClient.groups.first(where: { $0.id == groupID }),
+              group.isOwner,
+              let accessToken = accountClient.accessToken else {
+            rideAlertMessage = "只有小队创建者可以设置集合点。"
+            return
+        }
+        guard let point = currentRide.points.last,
+              let accuracy = point.horizontalAccuracyMeters,
+              accuracy <= RideLocationFilter.maximumTrackingHorizontalAccuracyMeters else {
+            rideAlertMessage = "正在等待准确的 GPS 位置，请到开阔处稍后重试。"
+            return
+        }
+        guard !isUpdatingTeamMeetingPoint else { return }
+
+        isUpdatingTeamMeetingPoint = true
+        defer { isUpdatingTeamMeetingPoint = false }
+        do {
+            teamMeetingPoint = try await groupLiveLocationService.setMeetingPoint(
+                groupID: groupID,
+                point: point,
+                accessToken: accessToken
+            )
+            rideAlertMessage = "已将当前位置设为「\(group.name)」集合点，有效期 6 小时。"
+        } catch {
+            rideAlertMessage = "集合点设置失败，请检查网络后重试。"
+            print("Setting team meeting point failed: \(error.localizedDescription)")
+        }
+    }
+
+    func clearTeamMeetingPoint(groupID: String) async {
+        guard let group = accountClient.groups.first(where: { $0.id == groupID }),
+              group.isOwner,
+              let accessToken = accountClient.accessToken else {
+            rideAlertMessage = "只有小队创建者可以清除集合点。"
+            return
+        }
+        guard !isUpdatingTeamMeetingPoint else { return }
+
+        isUpdatingTeamMeetingPoint = true
+        defer { isUpdatingTeamMeetingPoint = false }
+        do {
+            try await groupLiveLocationService.clearMeetingPoint(
+                groupID: groupID,
+                accessToken: accessToken
+            )
+            teamMeetingPoint = nil
+            rideAlertMessage = "已清除「\(group.name)」集合点。"
+        } catch {
+            rideAlertMessage = "集合点清除失败，请检查网络后重试。"
+            print("Clearing team meeting point failed: \(error.localizedDescription)")
         }
     }
 
@@ -627,6 +724,20 @@ final class AppState: ObservableObject {
         }
     }
 
+    private func refreshTeamMeetingPoint() async {
+        guard isSharingRideLocation,
+              let groupID = locationSharingGroupID,
+              let accessToken = accountClient.accessToken else { return }
+        do {
+            teamMeetingPoint = try await groupLiveLocationService.meetingPoint(
+                groupID: groupID,
+                accessToken: accessToken
+            )
+        } catch {
+            print("Refreshing team meeting point failed: \(error.localizedDescription)")
+        }
+    }
+
     private func updateTeamSafetyStatus(
         with locations: [GroupLiveLocation]
     ) async {
@@ -675,6 +786,26 @@ final class AppState: ObservableObject {
         )
     }
 
+    private func evaluateRouteDeviation(_ riderLocation: RidePoint?) async {
+        guard let riderLocation, let referenceRide else {
+            routeDeviationEvaluation = nil
+            return
+        }
+        let evaluation = routeDeviationMonitor.evaluate(
+            riderLocation: riderLocation,
+            referenceRoute: referenceRide.points
+        )
+        routeDeviationEvaluation = evaluation
+        guard evaluation?.shouldAlert == true else { return }
+
+        let distance = Int((evaluation?.distanceMeters ?? 0).rounded())
+        await PushNotificationManager.shared.presentTeamSafetyNotification(
+            identifier: "route-deviation-\(UUID().uuidString)",
+            title: "路线偏航提醒",
+            body: "你已持续偏离参考路线约 \(distance) 米，请查看地图确认方向。"
+        )
+    }
+
     private func serverDate(from value: String) -> Date? {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -692,6 +823,7 @@ final class AppState: ObservableObject {
                     force: true
                 )
                 await self.refreshTeammateLocations()
+                await self.refreshTeamMeetingPoint()
             }
         }
     }

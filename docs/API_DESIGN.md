@@ -192,6 +192,35 @@ DELETE /v1/groups/{groupId}/live-location
 PostgreSQL 或 JSON 镜像。结束骑行、手动停止共享、退出小队、被移出小队或解散小队时会
 立即清除对应位置。
 
+### 小队集合点
+
+小队成员读取当前集合点，小队创建者设置或清除集合点：
+
+```http
+GET    /v1/groups/{groupId}/meeting-point
+PUT    /v1/groups/{groupId}/meeting-point
+DELETE /v1/groups/{groupId}/meeting-point
+Authorization: Bearer <accessToken>
+```
+
+`PUT` 请求体：
+
+```json
+{
+  "latitude": 39.9042,
+  "longitude": 116.4074,
+  "title": "小队集合点",
+  "horizontalAccuracyMeters": 8,
+  "capturedAt": "2026-07-28T03:00:00.000Z"
+}
+```
+
+`GET` 对所有小队成员开放；没有有效集合点时返回 `{"meetingPoint": null}`。`PUT` 和
+`DELETE` 仅允许小队创建者调用，普通成员返回 `403 group_owner_required`。集合点保存在
+服务进程内存中，设置后 6 小时自动过期，解散小队或删除创建者账户时立即清除。更新成功
+会向其他成员发送 `group_meeting_point_updated` APNs 通知。部署不需要新增端口、数据表
+或环境变量，更新现有后端 Docker 镜像即可。
+
 小队成员在骑行中发送紧急求助：
 
 ```http
@@ -231,9 +260,9 @@ Authorization: Bearer <accessToken>
 ```
 
 `sandbox` 用于 Xcode Debug 真机，`production` 用于 TestFlight/App Store。Token 只能绑定
-一个 BikeGoGo 账号；重新绑定会自动转移归属。好友申请、申请通过、小队邀请和语音
-呼叫和小队 SOS 会触发普通 APNs alert。推送失败不会回滚业务操作，APNs 确认失效的 Token 会
-自动删除。
+一个 BikeGoGo 账号；重新绑定会自动转移归属。好友申请、申请通过、小队邀请、语音
+呼叫、小队集合点更新和小队 SOS 会触发普通 APNs alert。推送失败不会回滚业务操作，
+APNs 确认失效的 Token 会自动删除。
 
 ## 语音
 

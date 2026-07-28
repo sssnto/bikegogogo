@@ -25,7 +25,9 @@ import {
 } from "./data-store.js";
 import {
   LiveLocationStore,
-  type LiveLocationRecord
+  MeetingPointStore,
+  type LiveLocationRecord,
+  type MeetingPointRecord
 } from "./live-location-store.js";
 
 export type AppConfig = {
@@ -112,6 +114,20 @@ const publicLiveLocation = (
   updatedAt: location.updatedAt
 });
 
+const publicMeetingPoint = (
+  store: DataStore,
+  meetingPoint: MeetingPointRecord
+) => ({
+  setBy: publicUser(store.userById(meetingPoint.setByUserId)!),
+  latitude: meetingPoint.latitude,
+  longitude: meetingPoint.longitude,
+  title: meetingPoint.title,
+  horizontalAccuracyMeters: meetingPoint.horizontalAccuracyMeters,
+  capturedAt: meetingPoint.capturedAt,
+  updatedAt: meetingPoint.updatedAt,
+  expiresAt: meetingPoint.expiresAt
+});
+
 export async function createApp(config: AppConfig) {
   const app = Fastify({ logger: true, bodyLimit: 15 * 1024 * 1024 });
   const store = new DataStore(
@@ -123,6 +139,7 @@ export async function createApp(config: AppConfig) {
     ?? createAppleIdentityVerifier(config.appleBundleId);
   const notificationSenders = config.notificationSenders ?? [];
   const liveLocations = new LiveLocationStore();
+  const meetingPoints = new MeetingPointStore();
   await store.initialize();
   app.log.info({ storage: store.storageBackend }, "Data store initialized");
   app.addHook("onClose", async () => {
@@ -308,8 +325,10 @@ export async function createApp(config: AppConfig) {
     deleteAccountSchema.parse(request.body);
     const result = await store.deleteAccount(currentUser.id);
     liveLocations.removeUser(currentUser.id);
+    meetingPoints.removeUser(currentUser.id);
     result.deletedOwnedGroupIds.forEach((groupId) => {
       liveLocations.removeGroup(groupId);
+      meetingPoints.removeGroup(groupId);
     });
     return reply.status(204).send();
   });
@@ -513,6 +532,7 @@ export async function createApp(config: AppConfig) {
     const params = groupParamsSchema.parse(request.params);
     await store.deleteGroup(params.groupId, currentUser.id);
     liveLocations.removeGroup(params.groupId);
+    meetingPoints.removeGroup(params.groupId);
     return reply.status(204).send();
   });
 
@@ -522,6 +542,13 @@ export async function createApp(config: AppConfig) {
     horizontalAccuracyMeters: z.number().min(0).max(1_000).optional(),
     speedMetersPerSecond: z.number().min(0).max(100).optional(),
     courseDegrees: z.number().min(0).max(360).optional(),
+    capturedAt: z.string().datetime()
+  });
+  const meetingPointBodySchema = z.object({
+    latitude: z.number().min(-90).max(90),
+    longitude: z.number().min(-180).max(180),
+    title: z.string().trim().min(1).max(40).default("小队集合点"),
+    horizontalAccuracyMeters: z.number().min(0).max(1_000).optional(),
     capturedAt: z.string().datetime()
   });
 
@@ -535,6 +562,18 @@ export async function createApp(config: AppConfig) {
         "group_membership_required",
         403,
         "Group membership required"
+      );
+    }
+    return group;
+  };
+
+  const requireGroupOwnership = (groupId: string, userId: string) => {
+    const group = requireGroupMembership(groupId, userId);
+    if (group.ownerId !== userId) {
+      throw new StoreError(
+        "group_owner_required",
+        403,
+        "Group owner access required"
       );
     }
     return group;
@@ -573,6 +612,61 @@ export async function createApp(config: AppConfig) {
     const params = groupParamsSchema.parse(request.params);
     requireGroupMembership(params.groupId, currentUser.id);
     liveLocations.remove(params.groupId, currentUser.id);
+    return reply.status(204).send();
+  });
+
+  app.get("/v1/groups/:groupId/meeting-point", async (request) => {
+    const currentUser = authenticatedUser(request);
+    const params = groupParamsSchema.parse(request.params);
+    requireGroupMembership(params.groupId, currentUser.id);
+    const meetingPoint = meetingPoints.get(params.groupId);
+    return {
+      meetingPoint: meetingPoint
+        ? publicMeetingPoint(store, meetingPoint)
+        : null
+    };
+  });
+
+  app.put("/v1/groups/:groupId/meeting-point", async (request) => {
+    const currentUser = authenticatedUser(request);
+    const params = groupParamsSchema.parse(request.params);
+    const body = meetingPointBodySchema.parse(request.body);
+    const group = requireGroupOwnership(params.groupId, currentUser.id);
+    const meetingPoint = meetingPoints.set(
+      params.groupId,
+      currentUser.id,
+      body
+    );
+    const recipientIds = group.memberIds.filter(
+      (memberId) => memberId !== currentUser.id
+    );
+
+    await Promise.all(recipientIds.map((recipientId) => notifyUser(
+      recipientId,
+      {
+        title: "小队集合点已更新",
+        body: `${currentUser.displayName} 将集合点设为「${meetingPoint.title}」`,
+        event: "group_meeting_point_updated",
+        entityId: params.groupId,
+        data: {
+          groupId: params.groupId,
+          groupName: group.name,
+          title: meetingPoint.title,
+          latitude: String(meetingPoint.latitude),
+          longitude: String(meetingPoint.longitude),
+          expiresAt: meetingPoint.expiresAt
+        }
+      }
+    )));
+
+    return { meetingPoint: publicMeetingPoint(store, meetingPoint) };
+  });
+
+  app.delete("/v1/groups/:groupId/meeting-point", async (request, reply) => {
+    const currentUser = authenticatedUser(request);
+    const params = groupParamsSchema.parse(request.params);
+    requireGroupOwnership(params.groupId, currentUser.id);
+    meetingPoints.removeGroup(params.groupId);
     return reply.status(204).send();
   });
 

@@ -794,6 +794,139 @@ test("group members can share temporary ride locations", async () => {
   }
 });
 
+test("group owners can set a temporary meeting point for members", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "bikegogogo-test-"));
+  const dataFile = path.join(directory, "data.json");
+  const deliveries: Array<{
+    tokens: string[];
+    notification: PushNotification;
+  }> = [];
+  const sender: NotificationSender = {
+    environment: "sandbox",
+    async send(tokens, notification) {
+      deliveries.push({ tokens, notification });
+      return { invalidTokens: [], failedCount: 0 };
+    }
+  };
+  const app = await createApp(configFor(dataFile, [sender]));
+
+  try {
+    const owner = (await app.inject({
+      method: "POST",
+      url: "/v1/auth/guest",
+      payload: { deviceId: "meeting-owner-device", displayName: "Meeting Owner" }
+    })).json();
+    const member = (await app.inject({
+      method: "POST",
+      url: "/v1/auth/guest",
+      payload: { deviceId: "meeting-member-device", displayName: "Meeting Member" }
+    })).json();
+    const outsider = (await app.inject({
+      method: "POST",
+      url: "/v1/auth/guest",
+      payload: { deviceId: "meeting-outsider-device", displayName: "Meeting Outsider" }
+    })).json();
+
+    await app.inject({
+      method: "PUT",
+      url: "/v1/devices/push-token",
+      headers: { authorization: `Bearer ${member.accessToken}` },
+      payload: { token: "f".repeat(64), environment: "sandbox" }
+    });
+    const friendRequest = await app.inject({
+      method: "POST",
+      url: "/v1/friends/requests",
+      headers: { authorization: `Bearer ${owner.accessToken}` },
+      payload: { friendCode: member.user.friendCode }
+    });
+    await app.inject({
+      method: "POST",
+      url: `/v1/friends/requests/${friendRequest.json().request.id}/accept`,
+      headers: { authorization: `Bearer ${member.accessToken}` }
+    });
+    const group = (await app.inject({
+      method: "POST",
+      url: "/v1/groups",
+      headers: { authorization: `Bearer ${owner.accessToken}` },
+      payload: { name: "Meeting Riders" }
+    })).json().group;
+    await app.inject({
+      method: "POST",
+      url: `/v1/groups/${group.id}/members`,
+      headers: { authorization: `Bearer ${owner.accessToken}` },
+      payload: { userId: member.user.id }
+    });
+    deliveries.length = 0;
+
+    const forbiddenRead = await app.inject({
+      method: "GET",
+      url: `/v1/groups/${group.id}/meeting-point`,
+      headers: { authorization: `Bearer ${outsider.accessToken}` }
+    });
+    assert.equal(forbiddenRead.statusCode, 403);
+
+    const forbiddenSet = await app.inject({
+      method: "PUT",
+      url: `/v1/groups/${group.id}/meeting-point`,
+      headers: { authorization: `Bearer ${member.accessToken}` },
+      payload: {
+        latitude: 39.9042,
+        longitude: 116.4074,
+        title: "东门",
+        capturedAt: "2026-07-28T03:00:00.000Z"
+      }
+    });
+    assert.equal(forbiddenSet.statusCode, 403);
+
+    const set = await app.inject({
+      method: "PUT",
+      url: `/v1/groups/${group.id}/meeting-point`,
+      headers: { authorization: `Bearer ${owner.accessToken}` },
+      payload: {
+        latitude: 39.9042,
+        longitude: 116.4074,
+        title: "东门",
+        horizontalAccuracyMeters: 6,
+        capturedAt: "2026-07-28T03:00:00.000Z"
+      }
+    });
+    assert.equal(set.statusCode, 200);
+    assert.equal(set.json().meetingPoint.title, "东门");
+    assert.equal(set.json().meetingPoint.setBy.id, owner.user.id);
+    assert.equal(deliveries.length, 1);
+    assert.equal(
+      deliveries[0].notification.event,
+      "group_meeting_point_updated"
+    );
+    assert.deepEqual(deliveries[0].tokens, ["f".repeat(64)]);
+
+    const visible = await app.inject({
+      method: "GET",
+      url: `/v1/groups/${group.id}/meeting-point`,
+      headers: { authorization: `Bearer ${member.accessToken}` }
+    });
+    assert.equal(visible.statusCode, 200);
+    assert.equal(visible.json().meetingPoint.latitude, 39.9042);
+
+    const cleared = await app.inject({
+      method: "DELETE",
+      url: `/v1/groups/${group.id}/meeting-point`,
+      headers: { authorization: `Bearer ${owner.accessToken}` }
+    });
+    assert.equal(cleared.statusCode, 204);
+
+    const afterClear = await app.inject({
+      method: "GET",
+      url: `/v1/groups/${group.id}/meeting-point`,
+      headers: { authorization: `Bearer ${member.accessToken}` }
+    });
+    assert.equal(afterClear.json().meetingPoint, null);
+  } finally {
+    await app.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("group SOS refreshes the rider location and notifies teammates", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "bikegogogo-test-"));
   const dataFile = path.join(directory, "data.json");

@@ -14,6 +14,17 @@ struct GroupLiveLocation: Decodable, Identifiable, Equatable {
     var id: String { user.id }
 }
 
+struct GroupMeetingPoint: Decodable, Equatable {
+    let setBy: AppUser
+    let latitude: Double
+    let longitude: Double
+    let title: String
+    let horizontalAccuracyMeters: Double?
+    let capturedAt: String
+    let updatedAt: String
+    let expiresAt: String
+}
+
 final class GroupLiveLocationService {
     private let baseURL: URL
     private let session: URLSession
@@ -75,6 +86,58 @@ final class GroupLiveLocationService {
         accessToken: String
     ) async throws {
         let endpoint = endpoint(groupID: groupID, suffix: "live-location")
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "DELETE"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await session.data(for: request)
+        try Self.validate(response: response, data: data)
+    }
+
+    func meetingPoint(
+        groupID: String,
+        accessToken: String
+    ) async throws -> GroupMeetingPoint? {
+        let response: MeetingPointResponse = try await request(
+            groupID: groupID,
+            suffix: "meeting-point",
+            method: "GET",
+            accessToken: accessToken
+        )
+        return response.meetingPoint
+    }
+
+    func setMeetingPoint(
+        groupID: String,
+        point: RidePoint,
+        title: String = "小队集合点",
+        accessToken: String
+    ) async throws -> GroupMeetingPoint {
+        let body = MeetingPointBody(
+            latitude: point.latitude,
+            longitude: point.longitude,
+            title: title,
+            horizontalAccuracyMeters: point.horizontalAccuracyMeters,
+            capturedAt: Self.timestampFormatter.string(from: point.timestamp)
+        )
+        let data = try JSONEncoder().encode(body)
+        let response: MeetingPointResponse = try await request(
+            groupID: groupID,
+            suffix: "meeting-point",
+            method: "PUT",
+            body: data,
+            accessToken: accessToken
+        )
+        guard let meetingPoint = response.meetingPoint else {
+            throw GroupLiveLocationError.invalidResponse
+        }
+        return meetingPoint
+    }
+
+    func clearMeetingPoint(
+        groupID: String,
+        accessToken: String
+    ) async throws {
+        let endpoint = endpoint(groupID: groupID, suffix: "meeting-point")
         var request = URLRequest(url: endpoint)
         request.httpMethod = "DELETE"
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
@@ -149,12 +212,24 @@ private struct LiveLocationBody: Encodable {
     let capturedAt: String
 }
 
+private struct MeetingPointBody: Encodable {
+    let latitude: Double
+    let longitude: Double
+    let title: String
+    let horizontalAccuracyMeters: Double?
+    let capturedAt: String
+}
+
 private struct LiveLocationResponse: Decodable {
     let location: GroupLiveLocation
 }
 
 private struct LiveLocationsResponse: Decodable {
     let locations: [GroupLiveLocation]
+}
+
+private struct MeetingPointResponse: Decodable {
+    let meetingPoint: GroupMeetingPoint?
 }
 
 private struct TeamSOSResponse: Decodable {

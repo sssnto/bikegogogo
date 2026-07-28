@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { LiveLocationStore } from "../src/live-location-store.js";
+import {
+  LiveLocationStore,
+  MeetingPointStore
+} from "../src/live-location-store.js";
 
 test("live locations expire after the configured retention window", () => {
   let now = new Date("2026-07-28T00:00:00.000Z");
@@ -66,4 +69,38 @@ test("removing a user clears their locations across groups", () => {
     store.list("grp_second").map((location) => location.userId),
     ["usr_bravo"]
   );
+});
+
+test("meeting points expire and can be removed with their owner", () => {
+  let now = new Date("2026-07-28T00:00:00.000Z");
+  const store = new MeetingPointStore(
+    6 * 60 * 60 * 1000,
+    () => now
+  );
+
+  const meetingPoint = store.set("grp_first", "usr_alpha", {
+    latitude: 39.9042,
+    longitude: 116.4074,
+    title: "东门",
+    horizontalAccuracyMeters: 8,
+    capturedAt: now.toISOString()
+  });
+  assert.equal(meetingPoint.expiresAt, "2026-07-28T06:00:00.000Z");
+  assert.equal(store.get("grp_first")?.title, "东门");
+
+  now = new Date("2026-07-28T05:59:59.000Z");
+  assert.equal(store.get("grp_first")?.setByUserId, "usr_alpha");
+
+  now = new Date("2026-07-28T06:00:00.000Z");
+  assert.equal(store.get("grp_first"), undefined);
+
+  now = new Date("2026-07-28T07:00:00.000Z");
+  store.set("grp_second", "usr_alpha", {
+    latitude: 31.2304,
+    longitude: 121.4737,
+    title: "咖啡店",
+    capturedAt: now.toISOString()
+  });
+  store.removeUser("usr_alpha");
+  assert.equal(store.get("grp_second"), undefined);
 });

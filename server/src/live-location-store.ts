@@ -13,6 +13,21 @@ export type LiveLocationRecord = LiveLocationInput & {
   updatedAt: string;
 };
 
+export type MeetingPointInput = {
+  latitude: number;
+  longitude: number;
+  title: string;
+  horizontalAccuracyMeters?: number;
+  capturedAt: string;
+};
+
+export type MeetingPointRecord = MeetingPointInput & {
+  groupId: string;
+  setByUserId: string;
+  updatedAt: string;
+  expiresAt: string;
+};
+
 export class LiveLocationStore {
   private readonly locations = new Map<string, LiveLocationRecord>();
 
@@ -75,5 +90,57 @@ export class LiveLocationStore {
 
   private key(groupId: string, userId: string): string {
     return `${groupId}:${userId}`;
+  }
+}
+
+export class MeetingPointStore {
+  private readonly meetingPoints = new Map<string, MeetingPointRecord>();
+
+  constructor(
+    private readonly ttlMilliseconds = 6 * 60 * 60 * 1000,
+    private readonly now: () => Date = () => new Date()
+  ) {}
+
+  set(
+    groupId: string,
+    userId: string,
+    input: MeetingPointInput
+  ): MeetingPointRecord {
+    const now = this.now();
+    const record: MeetingPointRecord = {
+      ...input,
+      groupId,
+      setByUserId: userId,
+      updatedAt: now.toISOString(),
+      expiresAt: new Date(now.getTime() + this.ttlMilliseconds).toISOString()
+    };
+    this.meetingPoints.set(groupId, record);
+    return record;
+  }
+
+  get(groupId: string): MeetingPointRecord | undefined {
+    this.prune();
+    return this.meetingPoints.get(groupId);
+  }
+
+  removeGroup(groupId: string): void {
+    this.meetingPoints.delete(groupId);
+  }
+
+  removeUser(userId: string): void {
+    for (const [groupId, meetingPoint] of this.meetingPoints) {
+      if (meetingPoint.setByUserId === userId) {
+        this.meetingPoints.delete(groupId);
+      }
+    }
+  }
+
+  private prune(): void {
+    const now = this.now().getTime();
+    for (const [groupId, meetingPoint] of this.meetingPoints) {
+      if (new Date(meetingPoint.expiresAt).getTime() <= now) {
+        this.meetingPoints.delete(groupId);
+      }
+    }
   }
 }

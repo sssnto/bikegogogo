@@ -26,6 +26,12 @@ struct RideTrackingView: View {
         }
     }
 
+    private var referenceCoordinates: [CLLocationCoordinate2D] {
+        appState.referenceRide?.points.map {
+            CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
+        } ?? []
+    }
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
@@ -130,6 +136,30 @@ struct RideTrackingView: View {
                 }
             }
 
+            if let meetingPoint = appState.teamMeetingPoint {
+                Annotation(
+                    meetingPoint.title,
+                    coordinate: CLLocationCoordinate2D(
+                        latitude: meetingPoint.latitude,
+                        longitude: meetingPoint.longitude
+                    )
+                ) {
+                    MeetingPointAnnotation(title: meetingPoint.title)
+                }
+            }
+
+            if referenceCoordinates.count > 1 {
+                MapPolyline(coordinates: referenceCoordinates)
+                    .stroke(
+                        .blue.opacity(0.8),
+                        style: StrokeStyle(
+                            lineWidth: 4,
+                            lineCap: .round,
+                            dash: [8, 6]
+                        )
+                    )
+            }
+
             if coordinates.count > 1 {
                 MapPolyline(coordinates: coordinates)
                     .stroke(.green, lineWidth: 5)
@@ -153,23 +183,37 @@ struct RideTrackingView: View {
                 .padding(12)
         }
         .overlay(alignment: .bottomLeading) {
-            if appState.isSharingRideLocation {
-                Button {
-                    isShowingTeamStatus = true
-                } label: {
+            VStack(alignment: .leading, spacing: 6) {
+                if let routeDeviationStatus {
                     Label(
-                        locationSharingStatusText,
-                        systemImage: locationSharingStatusIcon
+                        routeDeviationStatus.text,
+                        systemImage: routeDeviationStatus.icon
                     )
                     .font(.caption)
-                    .foregroundStyle(locationSharingStatusColor)
+                    .foregroundStyle(routeDeviationStatus.color)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 8)
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
                 }
-                .buttonStyle(.plain)
-                .padding(12)
+
+                if appState.isSharingRideLocation {
+                    Button {
+                        isShowingTeamStatus = true
+                    } label: {
+                        Label(
+                            locationSharingStatusText,
+                            systemImage: locationSharingStatusIcon
+                        )
+                        .font(.caption)
+                        .foregroundStyle(locationSharingStatusColor)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+                    }
+                    .buttonStyle(.plain)
+                }
             }
+            .padding(12)
         }
         .onChange(of: coordinates.count) {
             guard let latest = coordinates.last else { return }
@@ -201,10 +245,16 @@ struct RideTrackingView: View {
     private var rideMapActions: some View {
         let isActiveRide = appState.currentRide.state == .recording
             || appState.currentRide.state == .paused
-        if isActiveRide, !appState.accountClient.groups.isEmpty {
+        if isActiveRide {
             HStack(spacing: 8) {
-                teamSOSMenu
-                locationSharingMenu
+                if !appState.accountClient.groups.isEmpty {
+                    teamSOSMenu
+                    rideTeamVoiceButton
+                }
+                rideNavigationMenu
+                if !appState.accountClient.groups.isEmpty {
+                    locationSharingMenu
+                }
             }
         }
     }
@@ -230,11 +280,163 @@ struct RideTrackingView: View {
         .disabled(appState.isSendingTeamSOS)
     }
 
+    @ViewBuilder
+    private var rideTeamVoiceButton: some View {
+        if appState.voiceClient.isConnected {
+            Menu {
+                Button {
+                    Task {
+                        await appState.toggleMute()
+                    }
+                } label: {
+                    Label(
+                        appState.voiceClient.isMuted ? "打开麦克风" : "静音",
+                        systemImage: appState.voiceClient.isMuted
+                            ? "mic.fill"
+                            : "mic.slash.fill"
+                    )
+                }
+                Button(role: .destructive) {
+                    Task {
+                        await appState.leaveVoiceRoom()
+                    }
+                } label: {
+                    Label("结束语音", systemImage: "phone.down.fill")
+                }
+            } label: {
+                mapActionIcon(
+                    appState.voiceClient.isMuted ? "mic.slash.fill" : "waveform",
+                    color: appState.voiceClient.isMuted ? .orange : .green
+                )
+            }
+            .accessibilityLabel("管理骑行语音")
+        } else {
+            Button {
+                Task {
+                    await appState.callActiveRideTeam()
+                }
+            } label: {
+                mapActionIcon("phone.fill")
+            }
+            .accessibilityLabel("呼叫当前小队")
+            .disabled(appState.activeLocationSharingGroup == nil)
+        }
+    }
+
+    private var rideNavigationMenu: some View {
+        Menu {
+            if let group = appState.activeLocationSharingGroup {
+                if let meetingPoint = appState.teamMeetingPoint {
+                    Button {
+                        focusOnMeetingPoint(meetingPoint)
+                    } label: {
+                        Label("查看集合点", systemImage: "flag.checkered")
+                    }
+                }
+                if group.isOwner {
+                    Button {
+                        Task {
+                            await appState.setTeamMeetingPoint(groupID: group.id)
+                        }
+                    } label: {
+                        Label(
+                            appState.teamMeetingPoint == nil
+                                ? "将当前位置设为集合点"
+                                : "更新为当前位置",
+                            systemImage: "mappin.and.ellipse"
+                        )
+                    }
+                    if appState.teamMeetingPoint != nil {
+                        Button(role: .destructive) {
+                            Task {
+                                await appState.clearTeamMeetingPoint(groupID: group.id)
+                            }
+                        } label: {
+                            Label("清除集合点", systemImage: "flag.slash")
+                        }
+                    }
+                }
+                Divider()
+            }
+
+            Menu {
+                let candidateRides = appState.recentRides.filter {
+                    $0.points.count > 1
+                }
+                if candidateRides.isEmpty {
+                    Text("暂无可用历史路线")
+                } else {
+                    ForEach(candidateRides.prefix(8)) { ride in
+                        Button {
+                            appState.selectReferenceRoute(ride)
+                        } label: {
+                            Label(
+                                ride.title,
+                                systemImage: appState.referenceRideID == ride.id
+                                    ? "checkmark"
+                                    : "point.topleft.down.to.point.bottomright.curvepath"
+                            )
+                        }
+                    }
+                }
+            } label: {
+                Label("选择历史参考路线", systemImage: "map")
+            }
+
+            if appState.referenceRideID != nil {
+                Button(role: .destructive) {
+                    appState.clearReferenceRoute()
+                } label: {
+                    Label("停止路线提醒", systemImage: "map.fill")
+                }
+            }
+        } label: {
+            mapActionIcon(
+                appState.teamMeetingPoint != nil || appState.referenceRideID != nil
+                    ? "map.fill"
+                    : "map",
+                color: appState.routeDeviationEvaluation?.state == .deviating
+                    ? .red
+                    : .primary
+            )
+        }
+        .accessibilityLabel("集合点与参考路线")
+        .disabled(appState.isUpdatingTeamMeetingPoint)
+    }
+
+    private func mapActionIcon(
+        _ systemName: String,
+        color: Color = .primary
+    ) -> some View {
+        Image(systemName: systemName)
+            .font(.title3)
+            .foregroundStyle(color)
+            .frame(width: 44, height: 44)
+            .background(.regularMaterial, in: Circle())
+    }
+
     private func focusOnCurrentLocation() {
         withAnimation(.easeInOut(duration: 0.3)) {
             camera = .userLocation(
                 followsHeading: false,
                 fallback: .region(defaultRideMapRegion)
+            )
+        }
+    }
+
+    private func focusOnMeetingPoint(_ meetingPoint: GroupMeetingPoint) {
+        withAnimation(.easeInOut(duration: 0.3)) {
+            camera = .region(
+                MKCoordinateRegion(
+                    center: CLLocationCoordinate2D(
+                        latitude: meetingPoint.latitude,
+                        longitude: meetingPoint.longitude
+                    ),
+                    span: MKCoordinateSpan(
+                        latitudeDelta: 0.012,
+                        longitudeDelta: 0.012
+                    )
+                )
             )
         }
     }
@@ -356,6 +558,26 @@ struct RideTrackingView: View {
             return .orange
         }
         return .primary
+    }
+
+    private var routeDeviationStatus: (
+        text: String,
+        icon: String,
+        color: Color
+    )? {
+        guard appState.referenceRideID != nil,
+              let evaluation = appState.routeDeviationEvaluation else {
+            return nil
+        }
+        let distance = Int(evaluation.distanceMeters.rounded())
+        switch evaluation.state {
+        case .onRoute:
+            return ("参考路线 · 偏差 \(distance) m", "checkmark.circle.fill", .blue)
+        case .checking:
+            return ("正在确认路线偏离 · \(distance) m", "location.magnifyingglass", .orange)
+        case .deviating:
+            return ("已偏离参考路线 · \(distance) m", "exclamationmark.triangle.fill", .red)
+        }
     }
 
     private var metricsPanel: some View {
@@ -495,6 +717,31 @@ private struct TeammateLocationAnnotation: View {
     }
 }
 
+private struct MeetingPointAnnotation: View {
+    var title: String
+
+    var body: some View {
+        VStack(spacing: 3) {
+            ZStack {
+                Circle()
+                    .fill(.orange)
+                    .frame(width: 38, height: 38)
+                    .shadow(radius: 2, y: 1)
+                Image(systemName: "flag.checkered")
+                    .font(.body)
+                    .foregroundStyle(.white)
+            }
+            Text(title)
+                .font(.caption2)
+                .fontWeight(.semibold)
+                .lineLimit(1)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
+        }
+    }
+}
+
 private struct TeamRideStatusSheet: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var appState: AppState
@@ -512,6 +759,24 @@ private struct TeamRideStatusSheet: View {
                     )
                 } footer: {
                     Text("距离超过 500 米并持续 45 秒，或位置超过 60 秒未更新时提醒。")
+                }
+
+                if let meetingPoint = appState.teamMeetingPoint {
+                    Section("小队集合点") {
+                        LabeledContent("位置", value: meetingPoint.title)
+                        LabeledContent(
+                            "距离",
+                            value: meetingPointDistanceText(meetingPoint)
+                        )
+                        LabeledContent(
+                            "有效期",
+                            value: meetingPointExpiryText(meetingPoint)
+                        )
+                        LabeledContent(
+                            "设置人",
+                            value: meetingPoint.setBy.displayName
+                        )
+                    }
                 }
 
                 Section("本次骑行队友") {
@@ -580,6 +845,34 @@ private struct TeamRideStatusSheet: View {
             return String(format: "%.1f km", distance / 1_000)
         }
         return "\(Int(distance.rounded())) m"
+    }
+
+    private func meetingPointDistanceText(
+        _ meetingPoint: GroupMeetingPoint
+    ) -> String {
+        guard let point = appState.currentRide.points.last else {
+            return "等待当前位置"
+        }
+        let riderLocation = CLLocation(
+            latitude: point.latitude,
+            longitude: point.longitude
+        )
+        let meetingLocation = CLLocation(
+            latitude: meetingPoint.latitude,
+            longitude: meetingPoint.longitude
+        )
+        return distanceText(riderLocation.distance(from: meetingLocation))
+    }
+
+    private func meetingPointExpiryText(
+        _ meetingPoint: GroupMeetingPoint
+    ) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        guard let expiry = formatter.date(from: meetingPoint.expiresAt) else {
+            return "6 小时内"
+        }
+        return expiry.formatted(date: .omitted, time: .shortened)
     }
 }
 
