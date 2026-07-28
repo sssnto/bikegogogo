@@ -63,6 +63,28 @@ final class PushNotificationManager {
         }
     }
 
+    func presentTeamSafetyNotification(
+        identifier: String,
+        title: String,
+        body: String
+    ) async {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = .default
+        content.threadIdentifier = "team_ride_safety"
+        let request = UNNotificationRequest(
+            identifier: identifier,
+            content: content,
+            trigger: nil
+        )
+        do {
+            try await UNUserNotificationCenter.current().add(request)
+        } catch {
+            print("Team safety notification failed: \(error.localizedDescription)")
+        }
+    }
+
     func configure(accessToken newAccessToken: String?) async {
         if accessToken != newAccessToken,
            let oldAccessToken = accessToken,

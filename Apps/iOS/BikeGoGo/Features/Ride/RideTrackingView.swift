@@ -14,6 +14,7 @@ struct RideTrackingView: View {
     @State private var isConfirmingDiscard = false
     @State private var isConfirmingSOS = false
     @State private var selectedSOSGroupID: String?
+    @State private var isShowingTeamStatus = false
     @State private var camera = MapCameraPosition.userLocation(
         followsHeading: false,
         fallback: .region(defaultRideMapRegion)
@@ -102,6 +103,10 @@ struct RideTrackingView: View {
             } message: {
                 Text(appState.rideAlertMessage ?? "")
             }
+            .sheet(isPresented: $isShowingTeamStatus) {
+                TeamRideStatusSheet()
+                    .environmentObject(appState)
+            }
         }
     }
 
@@ -119,7 +124,8 @@ struct RideTrackingView: View {
                 ) {
                     TeammateLocationAnnotation(
                         name: location.user.displayName,
-                        speedMetersPerSecond: location.speedMetersPerSecond
+                        speedMetersPerSecond: location.speedMetersPerSecond,
+                        state: teamStatus(for: location.user.id)?.state
                     )
                 }
             }
@@ -148,19 +154,20 @@ struct RideTrackingView: View {
         }
         .overlay(alignment: .bottomLeading) {
             if appState.isSharingRideLocation {
-                Label(
-                    locationSharingStatusText,
-                    systemImage: appState.locationSharingMessage == nil
-                        ? "location.fill"
-                        : "exclamationmark.triangle.fill"
-                )
-                .font(.caption)
-                .foregroundStyle(
-                    appState.locationSharingMessage == nil ? Color.primary : Color.orange
-                )
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+                Button {
+                    isShowingTeamStatus = true
+                } label: {
+                    Label(
+                        locationSharingStatusText,
+                        systemImage: locationSharingStatusIcon
+                    )
+                    .font(.caption)
+                    .foregroundStyle(locationSharingStatusColor)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+                }
+                .buttonStyle(.plain)
                 .padding(12)
             }
         }
@@ -179,6 +186,10 @@ struct RideTrackingView: View {
             }
             focusOnCurrentLocation()
         }
+    }
+
+    private func teamStatus(for userID: String) -> TeamRideMemberStatus? {
+        appState.teamRideMemberStatuses.first { $0.userID == userID }
     }
 
     private var selectedSOSGroup: AppGroup? {
@@ -281,6 +292,14 @@ struct RideTrackingView: View {
 
                 if appState.isSharingRideLocation {
                     Divider()
+                    Toggle(
+                        isOn: Binding(
+                            get: { appState.teamSafetyAlertsEnabled },
+                            set: { appState.setTeamSafetyAlertsEnabled($0) }
+                        )
+                    ) {
+                        Label("掉队与失联提醒", systemImage: "bell.fill")
+                    }
                     Button(role: .destructive) {
                         Task {
                             await appState.stopRideLocationSharing()
@@ -313,8 +332,30 @@ struct RideTrackingView: View {
             return message
         }
         let groupName = appState.activeLocationSharingGroup?.name ?? "小队"
+        let warningCount = appState.teamRideMemberStatuses.filter {
+            $0.state != .nearby
+        }.count
+        if warningCount > 0 {
+            return "\(groupName) · \(warningCount) 项提醒"
+        }
         let teammateCount = appState.teammateLocations.count
         return "\(groupName) · \(teammateCount) 位队友在线"
+    }
+
+    private var locationSharingStatusIcon: String {
+        if appState.locationSharingMessage != nil
+            || appState.teamRideMemberStatuses.contains(where: { $0.state != .nearby }) {
+            return "exclamationmark.triangle.fill"
+        }
+        return "location.fill"
+    }
+
+    private var locationSharingStatusColor: Color {
+        if appState.locationSharingMessage != nil
+            || appState.teamRideMemberStatuses.contains(where: { $0.state != .nearby }) {
+            return .orange
+        }
+        return .primary
     }
 
     private var metricsPanel: some View {
@@ -411,12 +452,13 @@ struct RideTrackingView: View {
 private struct TeammateLocationAnnotation: View {
     var name: String
     var speedMetersPerSecond: Double?
+    var state: TeamRideMemberState?
 
     var body: some View {
         VStack(spacing: 3) {
             ZStack {
                 Circle()
-                    .fill(.blue)
+                    .fill(annotationColor)
                     .frame(width: 34, height: 34)
                     .shadow(radius: 2, y: 1)
                 Image(systemName: "person.fill")
@@ -439,6 +481,105 @@ private struct TeammateLocationAnnotation: View {
             return name
         }
         return "\(name) \(Int((speedMetersPerSecond * 3.6).rounded())) km/h"
+    }
+
+    private var annotationColor: Color {
+        switch state {
+        case .separated:
+            .orange
+        case .signalLost:
+            .gray
+        case .nearby, nil:
+            .blue
+        }
+    }
+}
+
+private struct TeamRideStatusSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var appState: AppState
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    Toggle(
+                        "掉队与失联提醒",
+                        isOn: Binding(
+                            get: { appState.teamSafetyAlertsEnabled },
+                            set: { appState.setTeamSafetyAlertsEnabled($0) }
+                        )
+                    )
+                } footer: {
+                    Text("距离超过 500 米并持续 45 秒，或位置超过 60 秒未更新时提醒。")
+                }
+
+                Section("本次骑行队友") {
+                    if appState.teamRideMemberStatuses.isEmpty {
+                        Text("尚未收到队友位置。队友开启同一小队的位置共享后会显示在这里。")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(appState.teamRideMemberStatuses) { status in
+                            HStack(spacing: 12) {
+                                Image(systemName: icon(for: status.state))
+                                    .foregroundStyle(color(for: status.state))
+                                    .frame(width: 24)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(status.displayName)
+                                    Text(detail(for: status))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle(appState.activeLocationSharingGroup?.name ?? "小队状态")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("完成") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+
+    private func icon(for state: TeamRideMemberState) -> String {
+        switch state {
+        case .nearby: "checkmark.circle.fill"
+        case .separated: "exclamationmark.triangle.fill"
+        case .signalLost: "wifi.slash"
+        }
+    }
+
+    private func color(for state: TeamRideMemberState) -> Color {
+        switch state {
+        case .nearby: .green
+        case .separated: .orange
+        case .signalLost: .red
+        }
+    }
+
+    private func detail(for status: TeamRideMemberStatus) -> String {
+        switch status.state {
+        case .nearby:
+            return distanceText(status.distanceMeters)
+        case .separated:
+            return "距离较远 · \(distanceText(status.distanceMeters))"
+        case .signalLost:
+            return "位置 \(Int(status.secondsSinceUpdate.rounded())) 秒未更新"
+        }
+    }
+
+    private func distanceText(_ distance: Double?) -> String {
+        guard let distance else { return "距离未知" }
+        if distance >= 1_000 {
+            return String(format: "%.1f km", distance / 1_000)
+        }
+        return "\(Int(distance.rounded())) m"
     }
 }
 

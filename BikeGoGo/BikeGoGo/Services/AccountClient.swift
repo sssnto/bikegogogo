@@ -225,6 +225,53 @@ final class AccountClient: ObservableObject {
         }
     }
 
+    func exportPersonalData() async -> URL? {
+        guard !isWorking else { return nil }
+        isWorking = true
+        defer { isWorking = false }
+
+        do {
+            let data = try await requestData(path: ["v1", "me", "export"])
+            let object = try JSONSerialization.jsonObject(with: data)
+            let formattedData = try JSONSerialization.data(
+                withJSONObject: object,
+                options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+            )
+            let filename = "BikeGoGo-personal-data-\(Int(Date().timeIntervalSince1970)).json"
+            let url = FileManager.default.temporaryDirectory
+                .appendingPathComponent(filename)
+            try formattedData.write(to: url, options: [.atomic])
+            statusMessage = "个人数据文件已生成"
+            return url
+        } catch {
+            errorMessage = accountMessage(for: error)
+            return nil
+        }
+    }
+
+    func deleteAccount() async -> Bool {
+        guard !isWorking else { return false }
+        isWorking = true
+        defer { isWorking = false }
+
+        do {
+            let body = try JSONEncoder().encode(
+                DeleteAccountBody(confirmation: "DELETE")
+            )
+            try await requestNoContent(
+                path: ["v1", "me"],
+                method: "DELETE",
+                body: body
+            )
+            clearSession()
+            requiresAppleSignIn = false
+            return true
+        } catch {
+            errorMessage = accountMessage(for: error)
+            return false
+        }
+    }
+
     func sendFriendRequest(friendCode: String) async -> Bool {
         guard !isWorking else { return false }
         isWorking = true
@@ -408,7 +455,34 @@ final class AccountClient: ObservableObject {
         return try JSONDecoder().decode(Response.self, from: data)
     }
 
-    private func requestNoContent(path: [String], method: String) async throws {
+    private func requestData(path: [String]) async throws -> Data {
+        let endpoint = path.reduce(baseURL) { url, component in
+            url.appending(path: component)
+        }
+        guard let accessToken else { throw AccountError.notAuthenticated }
+
+        var request = URLRequest(url: endpoint)
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await session.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AccountError.invalidResponse
+        }
+        guard 200..<300 ~= httpResponse.statusCode else {
+            let serverError = try? JSONDecoder().decode(ServerErrorResponse.self, from: data)
+            throw AccountError.server(
+                code: serverError?.error ?? "request_failed",
+                statusCode: httpResponse.statusCode
+            )
+        }
+        return data
+    }
+
+    private func requestNoContent(
+        path: [String],
+        method: String,
+        body: Data? = nil
+    ) async throws {
         let endpoint = path.reduce(baseURL) { url, component in
             url.appending(path: component)
         }
@@ -416,7 +490,11 @@ final class AccountClient: ObservableObject {
 
         var request = URLRequest(url: endpoint)
         request.httpMethod = method
+        request.httpBody = body
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        if body != nil {
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        }
         let (data, response) = try await session.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AccountError.invalidResponse
@@ -563,6 +641,10 @@ private struct GroupNameBody: Encodable {
 
 private struct GroupMemberBody: Encodable {
     let userId: String
+}
+
+private struct DeleteAccountBody: Encodable {
+    let confirmation: String
 }
 
 private struct GuestLoginResponse: Decodable {

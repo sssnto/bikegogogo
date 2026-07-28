@@ -33,6 +33,8 @@ final class AppState: ObservableObject {
     @Published private(set) var locationSharingMessage: String?
     @Published private(set) var incomingTeamSOS: TeamSOSPushEvent?
     @Published private(set) var isSendingTeamSOS = false
+    @Published private(set) var teamRideMemberStatuses: [TeamRideMemberStatus] = []
+    @Published private(set) var teamSafetyAlertsEnabled = true
 
     private let rideStore = LocalRideStore()
     private let rideCloudClient = RideCloudClient()
@@ -53,8 +55,17 @@ final class AppState: ObservableObject {
     private var activeVoiceInvitationID: String?
     private var locationSharingRefreshTask: Task<Void, Never>?
     private var lastLocationShareSentAt: Date?
+    private var teamSafetyMonitor = TeamRideSafetyMonitor()
+    private static let teamSafetyAlertsDefaultsKey = "bikegogo.teamSafetyAlertsEnabled"
 
     init() {
+        if UserDefaults.standard.object(
+            forKey: Self.teamSafetyAlertsDefaultsKey
+        ) != nil {
+            teamSafetyAlertsEnabled = UserDefaults.standard.bool(
+                forKey: Self.teamSafetyAlertsDefaultsKey
+            )
+        }
         let identityKey = "bikegogo.localVoiceIdentity"
         if let storedIdentity = UserDefaults.standard.string(forKey: identityKey) {
             localUserID = storedIdentity
@@ -305,6 +316,43 @@ final class AppState: ObservableObject {
         }
     }
 
+    var canDeleteAccount: Bool {
+        currentRide.state != .recording && currentRide.state != .paused
+    }
+
+    func deleteAccountAndLocalData() async -> Bool {
+        guard canDeleteAccount else {
+            accountClient.errorMessage = "请先结束或放弃当前骑行，再永久删除账户。"
+            return false
+        }
+        guard await accountClient.deleteAccount() else { return false }
+
+        await voiceClient.leave()
+        await stopRideLocationSharing()
+        incomingVoiceInvitation = nil
+        outgoingVoiceInvitation = nil
+        activeVoiceInvitationID = nil
+        voiceRoom.isJoined = false
+        recentRides = []
+        rideSyncMessage = nil
+        lastRideSyncAt = nil
+        currentRide = RideSession(
+            title: "准备开始骑行",
+            state: .idle,
+            source: .iPhone,
+            points: []
+        )
+        do {
+            try await rideStore.deleteAllData()
+        } catch {
+            print("Deleting local account data failed: \(error.localizedDescription)")
+        }
+
+        await accountClient.bootstrap(defaultDisplayName: localDisplayName)
+        accountClient.statusMessage = "原账户及其云端数据已永久删除"
+        return true
+    }
+
     func joinVoiceRoom(roomID: String) async {
         await voiceClient.join(
             groupID: roomID,
@@ -322,7 +370,7 @@ final class AppState: ObservableObject {
         isHandlingVoiceInvitation = true
         voiceCallMessage = nil
         defer { isHandlingVoiceInvitation = false }
-
+//
         do {
             outgoingVoiceInvitation = try await voiceTokenService.createInvitation(
                 targetID: targetID,
@@ -461,6 +509,13 @@ final class AppState: ObservableObject {
         incomingTeamSOS = nil
     }
 
+    func setTeamSafetyAlertsEnabled(_ enabled: Bool) {
+        teamSafetyAlertsEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: Self.teamSafetyAlertsDefaultsKey)
+        teamSafetyMonitor.reset()
+        teamRideMemberStatuses = []
+    }
+
     func startRideLocationSharing(groupID: String) async {
         guard currentRide.state == .recording || currentRide.state == .paused else {
             rideAlertMessage = "开始骑行后才能共享本次位置。"
@@ -472,9 +527,15 @@ final class AppState: ObservableObject {
             return
         }
 
+        let startsNewSafetySession = locationSharingGroupID != groupID
+            || !isSharingRideLocation
         if let previousGroupID = locationSharingGroupID,
            previousGroupID != groupID {
             await stopRideLocationSharing()
+        }
+        if startsNewSafetySession {
+            teamSafetyMonitor.reset()
+            teamRideMemberStatuses = []
         }
 
         locationSharingGroupID = groupID
@@ -496,6 +557,8 @@ final class AppState: ObservableObject {
         teammateLocations = []
         locationSharingMessage = nil
         lastLocationShareSentAt = nil
+        teamSafetyMonitor.reset()
+        teamRideMemberStatuses = []
 
         guard let groupID, let accessToken else { return }
         do {
@@ -556,11 +619,66 @@ final class AppState: ObservableObject {
             teammateLocations = locations.filter {
                 $0.user.id != accountClient.currentUser?.id
             }
+            await updateTeamSafetyStatus(with: teammateLocations)
             locationSharingMessage = nil
         } catch {
             locationSharingMessage = "队友位置暂时无法刷新"
             print("Refreshing teammate locations failed: \(error.localizedDescription)")
         }
+    }
+
+    private func updateTeamSafetyStatus(
+        with locations: [GroupLiveLocation]
+    ) async {
+        guard let riderLocation = currentRide.points.last else {
+            teamRideMemberStatuses = []
+            return
+        }
+        let samples = locations.compactMap { location -> TeamRideLocationSample? in
+            guard let updatedAt = serverDate(from: location.updatedAt) else {
+                return nil
+            }
+            return TeamRideLocationSample(
+                userID: location.user.id,
+                displayName: location.user.displayName,
+                latitude: location.latitude,
+                longitude: location.longitude,
+                updatedAt: updatedAt
+            )
+        }
+        let evaluation = teamSafetyMonitor.evaluate(
+            riderLocation: riderLocation,
+            samples: samples
+        )
+        teamRideMemberStatuses = evaluation.statuses
+        guard teamSafetyAlertsEnabled, !evaluation.newAlerts.isEmpty else {
+            return
+        }
+
+        let alertBody: String
+        if evaluation.newAlerts.count == 1,
+           let alert = evaluation.newAlerts.first {
+            switch alert.kind {
+            case .separated:
+                let distance = Int((alert.distanceMeters ?? 0).rounded())
+                alertBody = "\(alert.displayName) 距离你约 \(distance) 米，请确认是否掉队。"
+            case .signalLost:
+                alertBody = "\(alert.displayName) 的位置已超过 60 秒未更新，请尝试联系。"
+            }
+        } else {
+            alertBody = "\(evaluation.newAlerts.count) 位队友出现掉队或位置中断，请查看小队状态。"
+        }
+        await PushNotificationManager.shared.presentTeamSafetyNotification(
+            identifier: "team-safety-\(UUID().uuidString)",
+            title: "小队骑行提醒",
+            body: alertBody
+        )
+    }
+
+    private func serverDate(from value: String) -> Date? {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.date(from: value)
     }
 
     private func startLocationSharingRefreshLoop() {

@@ -365,6 +365,8 @@ POST  /v1/auth/apple
 DELETE /v1/session
 GET   /v1/me
 PATCH /v1/me
+GET   /v1/me/export
+DELETE /v1/me
 GET   /v1/friends
 GET   /v1/friends/requests
 POST  /v1/friends/requests
@@ -394,6 +396,23 @@ DELETE /v1/rides/{rideId}
 
 除 `POST /v1/auth/guest` 和 `POST /v1/auth/apple` 外，这些接口都要求
 `Authorization: Bearer <accessToken>`。完整请求示例见 `docs/API_DESIGN.md`。
+
+### 账户导出与永久删除部署说明
+
+这两个接口复用 PostgreSQL、现有 Bearer 鉴权和 HTTPS 反向代理，不增加环境变量、
+中间件、数据卷或公网端口。更新客户端前需要先更新 NAS 镜像：
+
+```bash
+docker compose pull bikegogogo-server
+docker compose up -d --force-recreate bikegogogo-server
+docker compose logs --tail=100 bikegogogo-server
+curl https://bikegogogo-server.sssnto.cn:8443/health
+```
+
+`GET /v1/me/export` 不返回设备摘要、会话令牌或推送 token。`DELETE /v1/me` 要求请求体
+中的 `confirmation` 精确为 `DELETE`，每个来源每小时最多调用 3 次。删除在一次数据库
+原子更新中完成；成功后旧 Bearer token 立即失效。生产环境执行删除测试前应先确认
+PostgreSQL 和 JSON 镜像备份均可恢复。
 
 ### 小队实时位置部署说明
 

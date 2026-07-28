@@ -1,8 +1,12 @@
+import AVFAudio
 import AuthenticationServices
+import CoreLocation
 import CryptoKit
+import HealthKit
 import Security
 import SwiftUI
 import UIKit
+import UserNotifications
 
 struct FriendsView: View {
     @EnvironmentObject private var appState: AppState
@@ -13,6 +17,7 @@ struct FriendsView: View {
 }
 
 private struct AccountView: View {
+    @EnvironmentObject private var appState: AppState
     @ObservedObject var account: AccountClient
     @State private var isAddingFriend = false
     @State private var isEditingProfile = false
@@ -78,6 +83,14 @@ private struct AccountView: View {
                     }
                     .disabled(account.currentUser == nil || account.isWorking)
                     .accessibilityLabel("添加好友")
+
+                    NavigationLink {
+                        AccountSettingsView()
+                    } label: {
+                        Image(systemName: "gearshape")
+                    }
+                    .disabled(account.currentUser == nil)
+                    .accessibilityLabel("账户与隐私设置")
                 }
             }
             .refreshable {
@@ -250,6 +263,228 @@ private struct AccountView: View {
             }
         }
     }
+}
+
+private struct AccountSettingsView: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var appState: AppState
+    @State private var notificationStatus = "读取中"
+    @State private var isExporting = false
+    @State private var exportedFile: ExportedAccountFile?
+    @State private var confirmsDeletion = false
+
+    private var account: AccountClient {
+        appState.accountClient
+    }
+
+    var body: some View {
+        List {
+            Section("账户") {
+                if let user = account.currentUser {
+                    LabeledContent("账户类型") {
+                        Text(user.isAppleAccount ? "Apple 账户" : "访客账户")
+                    }
+                    LabeledContent("好友码") {
+                        Text(user.friendCode)
+                            .font(.system(.body, design: .monospaced))
+                    }
+                }
+            }
+
+            Section {
+                Button {
+                    exportData()
+                } label: {
+                    Label(
+                        isExporting ? "正在生成数据文件" : "导出我的数据",
+                        systemImage: "square.and.arrow.up"
+                    )
+                }
+                .disabled(isExporting || account.isWorking)
+
+                Link(destination: AppConfiguration.privacyPolicyURL) {
+                    Label("隐私政策", systemImage: "hand.raised")
+                }
+            } header: {
+                Text("数据与隐私")
+            } footer: {
+                Text("导出文件包含账户资料、好友关系、小队和已同步的骑行记录，不包含登录令牌或推送令牌。")
+            }
+
+            Section {
+                PermissionStatusRow(
+                    title: "定位",
+                    systemImage: "location",
+                    status: locationStatus
+                )
+                PermissionStatusRow(
+                    title: "通知",
+                    systemImage: "bell",
+                    status: notificationStatus
+                )
+                PermissionStatusRow(
+                    title: "麦克风",
+                    systemImage: "mic",
+                    status: microphoneStatus
+                )
+                PermissionStatusRow(
+                    title: "健康与健身",
+                    systemImage: "heart",
+                    status: healthStatus
+                )
+
+                Button {
+                    guard let url = URL(
+                        string: UIApplication.openSettingsURLString
+                    ) else { return }
+                    UIApplication.shared.open(url)
+                } label: {
+                    Label("打开系统设置", systemImage: "gear")
+                }
+            } header: {
+                Text("系统权限")
+            } footer: {
+                Text("权限由 iPhone 系统管理。定位和麦克风关闭后，路线记录或骑行语音将无法正常工作。")
+            }
+
+            Section {
+                Button(role: .destructive) {
+                    confirmsDeletion = true
+                } label: {
+                    Label("永久删除账户", systemImage: "person.crop.circle.badge.minus")
+                }
+                .disabled(!appState.canDeleteAccount || account.isWorking)
+            } header: {
+                Text("危险操作")
+            } footer: {
+                Text(deletionFooter)
+            }
+        }
+        .navigationTitle("账户与隐私")
+        .navigationBarTitleDisplayMode(.inline)
+        .task {
+            await refreshNotificationStatus()
+        }
+        .sheet(item: $exportedFile) { file in
+            ActivityView(activityItems: [file.url])
+                .presentationDetents([.medium, .large])
+        }
+        .alert("永久删除账户？", isPresented: $confirmsDeletion) {
+            Button("取消", role: .cancel) {}
+            Button("永久删除", role: .destructive) {
+                Task {
+                    if await appState.deleteAccountAndLocalData() {
+                        dismiss()
+                    }
+                }
+            }
+        } message: {
+            Text("好友关系、小队、云端骑行记录和本机骑行数据都会被删除。此操作无法撤销。")
+        }
+    }
+
+    private var deletionFooter: String {
+        if !appState.canDeleteAccount {
+            return "当前有尚未结束的骑行。请先结束或放弃骑行，再删除账户。"
+        }
+        return "删除后无法恢复。应用会建立一个不含旧数据的新访客账户。"
+    }
+
+    private var locationStatus: String {
+        switch appState.locationAuthorizationStatus {
+        case .authorizedAlways: return "始终允许"
+        case .authorizedWhenInUse: return "使用期间"
+        case .denied: return "已关闭"
+        case .restricted: return "受限制"
+        case .notDetermined: return "未请求"
+        @unknown default: return "未知"
+        }
+    }
+
+    private var microphoneStatus: String {
+        switch AVAudioApplication.shared.recordPermission {
+        case .granted: return "已允许"
+        case .denied: return "已关闭"
+        case .undetermined: return "未请求"
+        @unknown default: return "未知"
+        }
+    }
+
+    private var healthStatus: String {
+        guard HKHealthStore.isHealthDataAvailable() else {
+            return "设备不可用"
+        }
+        switch HKHealthStore().authorizationStatus(for: .workoutType()) {
+        case .sharingAuthorized: return "已允许写入"
+        case .sharingDenied: return "未允许写入"
+        case .notDetermined: return "未请求"
+        @unknown default: return "未知"
+        }
+    }
+
+    private func exportData() {
+        isExporting = true
+        Task {
+            defer { isExporting = false }
+            if let url = await account.exportPersonalData() {
+                exportedFile = ExportedAccountFile(url: url)
+            }
+        }
+    }
+
+    private func refreshNotificationStatus() async {
+        let settings = await UNUserNotificationCenter.current()
+            .notificationSettings()
+        switch settings.authorizationStatus {
+        case .authorized: notificationStatus = "已允许"
+        case .provisional: notificationStatus = "临时允许"
+        case .ephemeral: notificationStatus = "临时会话"
+        case .denied: notificationStatus = "已关闭"
+        case .notDetermined: notificationStatus = "未请求"
+        @unknown default: notificationStatus = "未知"
+        }
+    }
+}
+
+private struct PermissionStatusRow: View {
+    let title: String
+    let systemImage: String
+    let status: String
+
+    var body: some View {
+        HStack {
+            Label(title, systemImage: systemImage)
+            Spacer()
+            Text(status)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+private struct ExportedAccountFile: Identifiable {
+    let url: URL
+
+    var id: String {
+        url.path
+    }
+}
+
+private struct ActivityView: UIViewControllerRepresentable {
+    let activityItems: [Any]
+
+    func makeUIViewController(
+        context: Context
+    ) -> UIActivityViewController {
+        UIActivityViewController(
+            activityItems: activityItems,
+            applicationActivities: nil
+        )
+    }
+
+    func updateUIViewController(
+        _ uiViewController: UIActivityViewController,
+        context: Context
+    ) {}
 }
 
 private struct AppleSignInControl: View {

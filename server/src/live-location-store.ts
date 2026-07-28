@@ -56,6 +56,14 @@ export class LiveLocationStore {
     }
   }
 
+  removeUser(userId: string): void {
+    for (const [key, location] of this.locations) {
+      if (location.userId === userId) {
+        this.locations.delete(key);
+      }
+    }
+  }
+
   private prune(): void {
     const cutoff = this.now().getTime() - this.ttlMilliseconds;
     for (const [key, location] of this.locations) {

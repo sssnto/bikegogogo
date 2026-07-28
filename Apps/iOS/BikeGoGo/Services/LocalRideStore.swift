@@ -59,6 +59,15 @@ actor LocalRideStore {
         try fileManager.removeItem(at: activeRideURL)
     }
 
+    func deleteAllData() async throws {
+        for url in [ridesURL, activeRideURL] where fileManager.fileExists(atPath: url.path) {
+            try fileManager.removeItem(at: url)
+        }
+        if fileManager.fileExists(atPath: exportsDirectoryURL.path) {
+            try fileManager.removeItem(at: exportsDirectoryURL)
+        }
+    }
+
     func exportGPX(for ride: RideSession) async throws -> URL {
         try fileManager.createDirectory(
             at: exportsDirectoryURL,

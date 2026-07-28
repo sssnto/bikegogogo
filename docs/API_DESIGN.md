@@ -80,6 +80,34 @@ PATCH /v1/me
 }
 ```
 
+导出当前账户数据：
+
+```http
+GET /v1/me/export
+Authorization: Bearer <accessToken>
+```
+
+响应是 JSON 文件内容，包含账户公开资料、好友、好友申请、小队和已同步骑行记录。
+设备标识摘要、会话令牌及推送 token 不会进入导出文件。
+
+永久删除当前账户：
+
+```http
+DELETE /v1/me
+Authorization: Bearer <accessToken>
+Content-Type: application/json
+```
+
+```json
+{
+  "confirmation": "DELETE"
+}
+```
+
+成功返回 `204` 并立即使该账户的全部会话失效。服务端同时删除好友申请、好友关系、
+本人创建的小队、本人骑行记录、推送 token 和语音邀请；本人会从其他人创建的小队中
+移除。缺少精确确认字符串时返回 `400`。
+
 ## 好友
 
 ```http

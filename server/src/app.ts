@@ -265,6 +265,55 @@ export async function createApp(config: AppConfig) {
     user: publicUser(authenticatedUser(request))
   }));
 
+  app.get("/v1/me/export", async (request) => {
+    const currentUser = authenticatedUser(request);
+    const requests = store.friendRequestsFor(currentUser.id);
+    return {
+      formatVersion: 1,
+      exportedAt: new Date().toISOString(),
+      account: {
+        ...publicUser(currentUser),
+        email: currentUser.email
+      },
+      friends: store.friendsFor(currentUser.id).map(publicUser),
+      friendRequests: {
+        incoming: requests.incoming.map((friendRequest) =>
+          publicFriendRequest(
+            friendRequest,
+            store.userById(friendRequest.fromUserId)!
+          )
+        ),
+        outgoing: requests.outgoing.map((friendRequest) =>
+          publicFriendRequest(
+            friendRequest,
+            store.userById(friendRequest.toUserId)!
+          )
+        )
+      },
+      groups: store.groupsFor(currentUser.id).map(
+        (group) => publicGroup(store, group, currentUser.id)
+      ),
+      rides: store.ridesFor(currentUser.id).map(publicRide)
+    };
+  });
+
+  const deleteAccountSchema = z.object({
+    confirmation: z.literal("DELETE")
+  });
+
+  app.delete("/v1/me", {
+    config: { rateLimit: { max: 3, timeWindow: "1 hour" } }
+  }, async (request, reply) => {
+    const currentUser = authenticatedUser(request);
+    deleteAccountSchema.parse(request.body);
+    const result = await store.deleteAccount(currentUser.id);
+    liveLocations.removeUser(currentUser.id);
+    result.deletedOwnedGroupIds.forEach((groupId) => {
+      liveLocations.removeGroup(groupId);
+    });
+    return reply.status(204).send();
+  });
+
   const updateProfileSchema = z.object({
     displayName: z.string().trim().min(2).max(30)
   });

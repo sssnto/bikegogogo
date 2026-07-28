@@ -76,6 +76,8 @@ PUT /v1/push-tokens
 DELETE /v1/push-tokens/:token
 GET /v1/me
 PATCH /v1/me
+GET /v1/me/export
+DELETE /v1/me
 GET /v1/friends
 GET /v1/friends/requests
 POST /v1/friends/requests

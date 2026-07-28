@@ -106,6 +106,10 @@ export type VoiceInvitationRecord = {
   cancelledAt?: string;
 };
 
+export type AccountDeletionResult = {
+  deletedOwnedGroupIds: string[];
+};
+
 type DatabaseState = {
   version: 5;
   users: UserRecord[];
@@ -767,6 +771,60 @@ export class DataStore {
       this.state.rides = this.state.rides.filter(
         (ride) => ride.userId !== userId || ride.id !== rideId
       );
+    });
+  }
+
+  async deleteAccount(userId: string): Promise<AccountDeletionResult> {
+    return this.mutate(async () => {
+      this.requireUser(userId);
+      const deletedOwnedGroupIds = this.state.groups
+        .filter((group) => group.ownerId === userId)
+        .map((group) => group.id);
+      const deletedOwnedGroupIDSet = new Set(deletedOwnedGroupIds);
+      const now = new Date().toISOString();
+
+      this.state.sessions = this.state.sessions.filter(
+        (session) => session.userId !== userId
+      );
+      this.state.friendRequests = this.state.friendRequests.filter(
+        (request) =>
+          request.fromUserId !== userId && request.toUserId !== userId
+      );
+      this.state.friendships = this.state.friendships.filter(
+        (friendship) =>
+          friendship.userAId !== userId && friendship.userBId !== userId
+      );
+      this.state.groups = this.state.groups
+        .filter((group) => !deletedOwnedGroupIDSet.has(group.id))
+        .map((group) => (
+          group.memberIds.includes(userId)
+            ? {
+                ...group,
+                memberIds: group.memberIds.filter(
+                  (memberId) => memberId !== userId
+                ),
+                updatedAt: now
+              }
+            : group
+        ));
+      this.state.rides = this.state.rides.filter(
+        (ride) => ride.userId !== userId
+      );
+      this.state.pushTokens = this.state.pushTokens.filter(
+        (record) => record.userId !== userId
+      );
+      this.state.voiceInvitations = this.state.voiceInvitations.filter(
+        (invitation) =>
+          invitation.callerId !== userId
+          && invitation.targetId !== userId
+          && !deletedOwnedGroupIDSet.has(invitation.targetId)
+          && !invitation.recipientIds.includes(userId)
+      );
+      this.state.users = this.state.users.filter(
+        (user) => user.id !== userId
+      );
+
+      return { deletedOwnedGroupIds };
     });
   }
 

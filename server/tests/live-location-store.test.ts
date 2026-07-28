@@ -39,3 +39,31 @@ test("removing a group clears every member location", () => {
 
   assert.deepEqual(store.list("grp_test"), []);
 });
+
+test("removing a user clears their locations across groups", () => {
+  const store = new LiveLocationStore();
+  const capturedAt = new Date().toISOString();
+  store.upsert("grp_first", "usr_alpha", {
+    latitude: 39.9042,
+    longitude: 116.4074,
+    capturedAt
+  });
+  store.upsert("grp_second", "usr_alpha", {
+    latitude: 39.905,
+    longitude: 116.408,
+    capturedAt
+  });
+  store.upsert("grp_second", "usr_bravo", {
+    latitude: 39.906,
+    longitude: 116.409,
+    capturedAt
+  });
+
+  store.removeUser("usr_alpha");
+
+  assert.deepEqual(store.list("grp_first"), []);
+  assert.deepEqual(
+    store.list("grp_second").map((location) => location.userId),
+    ["usr_bravo"]
+  );
+});

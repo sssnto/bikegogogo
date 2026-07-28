@@ -6,6 +6,8 @@
 	<string>https://bikegogogo-server.sssnto.cn:8443</string>
 	<key>BikeGoGoPushEnvironment</key>
 	<string>$(BIKEGOGO_PUSH_ENVIRONMENT)</string>
+	<key>BikeGoGoPrivacyPolicyURL</key>
+	<string>https://github.com/sssnto/bikegogogo/blob/main/docs/PRIVACY_POLICY.md</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>

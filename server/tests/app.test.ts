@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -989,6 +989,198 @@ test("finished rides sync per account and survive reload", async () => {
       headers: { authorization: `Bearer ${rider.accessToken}` }
     });
     assert.equal(deletedRead.statusCode, 404);
+  } finally {
+    await app.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("account export is private and account deletion removes owned data", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "bikegogogo-test-"));
+  const dataFile = path.join(directory, "data.json");
+  const app = await createApp(configFor(dataFile));
+
+  try {
+    const rider = (await app.inject({
+      method: "POST",
+      url: "/v1/auth/guest",
+      payload: {
+        deviceId: "account-delete-rider-device",
+        displayName: "Delete Rider"
+      }
+    })).json();
+    const teammate = (await app.inject({
+      method: "POST",
+      url: "/v1/auth/guest",
+      payload: {
+        deviceId: "account-delete-teammate-device",
+        displayName: "Keep Rider"
+      }
+    })).json();
+
+    const friendRequest = (await app.inject({
+      method: "POST",
+      url: "/v1/friends/requests",
+      headers: { authorization: `Bearer ${rider.accessToken}` },
+      payload: { friendCode: teammate.user.friendCode }
+    })).json();
+    await app.inject({
+      method: "POST",
+      url: `/v1/friends/requests/${friendRequest.request.id}/accept`,
+      headers: { authorization: `Bearer ${teammate.accessToken}` }
+    });
+
+    const ownedGroup = (await app.inject({
+      method: "POST",
+      url: "/v1/groups",
+      headers: { authorization: `Bearer ${rider.accessToken}` },
+      payload: { name: "Deleted Owner Group" }
+    })).json().group;
+    const retainedGroup = (await app.inject({
+      method: "POST",
+      url: "/v1/groups",
+      headers: { authorization: `Bearer ${teammate.accessToken}` },
+      payload: { name: "Retained Owner Group" }
+    })).json().group;
+    await app.inject({
+      method: "POST",
+      url: `/v1/groups/${retainedGroup.id}/members`,
+      headers: { authorization: `Bearer ${teammate.accessToken}` },
+      payload: { userId: rider.user.id }
+    });
+
+    const rideId = "dc8ee174-1f4a-42d3-b5ce-69d705e7ed5f";
+    await app.inject({
+      method: "PUT",
+      url: `/v1/rides/${rideId}`,
+      headers: { authorization: `Bearer ${rider.accessToken}` },
+      payload: {
+        id: rideId,
+        title: "Exported Ride",
+        state: "finished",
+        source: "iPhone",
+        startedAt: "2026-07-28T01:00:00.000Z",
+        endedAt: "2026-07-28T02:00:00.000Z",
+        points: [{
+          latitude: 39.9042,
+          longitude: 116.4074,
+          timestamp: "2026-07-28T01:00:00.000Z"
+        }],
+        metrics: {
+          distanceMeters: 12_000,
+          movingDurationSeconds: 3_000,
+          elapsedDurationSeconds: 3_600,
+          averageSpeedMetersPerSecond: 4,
+          maxSpeedMetersPerSecond: 10,
+          elevationGainMeters: 50
+        }
+      }
+    });
+    const pushToken = "f".repeat(64);
+    await app.inject({
+      method: "PUT",
+      url: "/v1/devices/push-token",
+      headers: { authorization: `Bearer ${rider.accessToken}` },
+      payload: { token: pushToken, environment: "sandbox" }
+    });
+    await app.inject({
+      method: "PUT",
+      url: `/v1/groups/${retainedGroup.id}/live-location`,
+      headers: { authorization: `Bearer ${rider.accessToken}` },
+      payload: {
+        latitude: 39.9042,
+        longitude: 116.4074,
+        capturedAt: "2026-07-28T01:30:00.000Z"
+      }
+    });
+
+    const unauthenticatedExport = await app.inject({
+      method: "GET",
+      url: "/v1/me/export"
+    });
+    assert.equal(unauthenticatedExport.statusCode, 401);
+
+    const exportResponse = await app.inject({
+      method: "GET",
+      url: "/v1/me/export",
+      headers: { authorization: `Bearer ${rider.accessToken}` }
+    });
+    assert.equal(exportResponse.statusCode, 200);
+    const exported = exportResponse.json();
+    assert.equal(exported.formatVersion, 1);
+    assert.equal(exported.account.id, rider.user.id);
+    assert.equal(exported.friends[0].id, teammate.user.id);
+    assert.deepEqual(
+      exported.groups.map((group: { id: string }) => group.id).sort(),
+      [ownedGroup.id, retainedGroup.id].sort()
+    );
+    assert.equal(exported.rides[0].id, rideId);
+    assert.equal("deviceIdHashes" in exported.account, false);
+    assert.equal(JSON.stringify(exported).includes(pushToken), false);
+
+    const missingConfirmation = await app.inject({
+      method: "DELETE",
+      url: "/v1/me",
+      headers: { authorization: `Bearer ${rider.accessToken}` },
+      payload: {}
+    });
+    assert.equal(missingConfirmation.statusCode, 400);
+
+    const deleted = await app.inject({
+      method: "DELETE",
+      url: "/v1/me",
+      headers: { authorization: `Bearer ${rider.accessToken}` },
+      payload: { confirmation: "DELETE" }
+    });
+    assert.equal(deleted.statusCode, 204);
+
+    const deletedSession = await app.inject({
+      method: "GET",
+      url: "/v1/me",
+      headers: { authorization: `Bearer ${rider.accessToken}` }
+    });
+    assert.equal(deletedSession.statusCode, 401);
+
+    const teammateFriends = await app.inject({
+      method: "GET",
+      url: "/v1/friends",
+      headers: { authorization: `Bearer ${teammate.accessToken}` }
+    });
+    assert.deepEqual(teammateFriends.json().friends, []);
+
+    const teammateGroups = await app.inject({
+      method: "GET",
+      url: "/v1/groups",
+      headers: { authorization: `Bearer ${teammate.accessToken}` }
+    });
+    assert.equal(teammateGroups.json().groups.length, 1);
+    assert.equal(teammateGroups.json().groups[0].id, retainedGroup.id);
+    assert.deepEqual(
+      teammateGroups.json().groups[0].members.map(
+        (member: { id: string }) => member.id
+      ),
+      [teammate.user.id]
+    );
+
+    const ownedGroupToken = await app.inject({
+      method: "POST",
+      url: `/v1/voice/rooms/${ownedGroup.id}/token`,
+      headers: { authorization: `Bearer ${teammate.accessToken}` },
+      payload: { canPublish: true, canSubscribe: true }
+    });
+    assert.equal(ownedGroupToken.statusCode, 404);
+
+    const remainingLocations = await app.inject({
+      method: "GET",
+      url: `/v1/groups/${retainedGroup.id}/live-locations`,
+      headers: { authorization: `Bearer ${teammate.accessToken}` }
+    });
+    assert.deepEqual(remainingLocations.json().locations, []);
+
+    const persistedState = await readFile(dataFile, "utf8");
+    assert.equal(persistedState.includes(rider.user.id), false);
+    assert.equal(persistedState.includes(rideId), false);
+    assert.equal(persistedState.includes(pushToken), false);
   } finally {
     await app.close();
     await rm(directory, { recursive: true, force: true });
