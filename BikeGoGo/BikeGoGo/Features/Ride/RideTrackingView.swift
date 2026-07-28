@@ -212,6 +212,8 @@ struct RideTrackingView: View {
                             systemImage: meetingPointStatus.icon
                         )
                         .font(.caption)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
                         .foregroundStyle(meetingPointStatus.color)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 8)
@@ -671,11 +673,35 @@ struct RideTrackingView: View {
         let distanceText = distance >= 1_000
             ? String(format: "%.1f km", distance / 1_000)
             : "\(Int(distance.rounded())) m"
+        let eta = MeetingPointETAEstimator.estimate(
+            distanceMeters: distance,
+            currentSpeedMetersPerSecond: point.speedMetersPerSecond,
+            averageSpeedMetersPerSecond:
+                appState.currentRide.metrics.averageSpeedMetersPerSecond
+        )
+        let etaText = eta.map {
+            " · 约 \(meetingPointDurationText($0.durationSeconds))"
+        } ?? ""
         return (
-            "\(meetingPoint.title) · \(distanceText)",
+            "\(meetingPoint.title) · \(distanceText)\(etaText)",
             "flag.checkered",
             distance <= 100 ? .green : .orange
         )
+    }
+
+    private func meetingPointDurationText(_ duration: TimeInterval) -> String {
+        if duration <= 60 {
+            return "1 分钟"
+        }
+        let minutes = Int(ceil(duration / 60))
+        if minutes < 60 {
+            return "\(minutes) 分钟"
+        }
+        let hours = minutes / 60
+        let remainingMinutes = minutes % 60
+        return remainingMinutes == 0
+            ? "\(hours) 小时"
+            : "\(hours) 小时 \(remainingMinutes) 分钟"
     }
 
     private var metricsPanel: some View {
@@ -844,6 +870,7 @@ private struct MeetingPointMemberProgress: Identifiable {
     let id: String
     let displayName: String
     let distanceMeters: Double?
+    let estimatedDurationSeconds: TimeInterval?
     let isCurrentUser: Bool
 
     var hasArrived: Bool {
@@ -879,6 +906,10 @@ private struct TeamRideStatusSheet: View {
                             value: meetingPointDistanceText(meetingPoint)
                         )
                         LabeledContent(
+                            "预计到达",
+                            value: meetingPointETAForCurrentUser(meetingPoint)
+                        )
+                        LabeledContent(
                             "有效期",
                             value: meetingPointExpiryText(meetingPoint)
                         )
@@ -889,7 +920,11 @@ private struct TeamRideStatusSheet: View {
                         let progress = meetingPointMemberProgress(meetingPoint)
                         if !progress.isEmpty {
                             Divider()
-                            Text("成员到达情况")
+                            LabeledContent(
+                                "到达进度",
+                                value: "\(progress.filter(\.hasArrived).count) / \(progress.count)"
+                            )
+                            Text(meetingPointProgressSummary(progress))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                             ForEach(progress) { member in
@@ -1013,6 +1048,34 @@ private struct TeamRideStatusSheet: View {
         return expiry.formatted(date: .omitted, time: .shortened)
     }
 
+    private func meetingPointETAForCurrentUser(
+        _ meetingPoint: GroupMeetingPoint
+    ) -> String {
+        guard let point = appState.currentRide.points.last else {
+            return "等待当前位置"
+        }
+        let distance = CLLocation(
+            latitude: point.latitude,
+            longitude: point.longitude
+        ).distance(
+            from: CLLocation(
+                latitude: meetingPoint.latitude,
+                longitude: meetingPoint.longitude
+            )
+        )
+        guard let estimate = MeetingPointETAEstimator.estimate(
+            distanceMeters: distance,
+            currentSpeedMetersPerSecond: point.speedMetersPerSecond,
+            averageSpeedMetersPerSecond:
+                appState.currentRide.metrics.averageSpeedMetersPerSecond
+        ) else {
+            return "开始移动后计算"
+        }
+        return estimate.durationSeconds == 0
+            ? "已到达"
+            : "约 \(durationText(estimate.durationSeconds))"
+    }
+
     private func meetingPointMemberProgress(
         _ meetingPoint: GroupMeetingPoint
     ) -> [MeetingPointMemberProgress] {
@@ -1021,11 +1084,16 @@ private struct TeamRideStatusSheet: View {
         return group.members.map { member in
             let isCurrentUser = member.id == currentUserID
             let coordinate: CLLocationCoordinate2D?
+            let speedMetersPerSecond: Double?
+            let averageSpeedMetersPerSecond: Double?
             if isCurrentUser, let point = appState.currentRide.points.last {
                 coordinate = CLLocationCoordinate2D(
                     latitude: point.latitude,
                     longitude: point.longitude
                 )
+                speedMetersPerSecond = point.speedMetersPerSecond
+                averageSpeedMetersPerSecond =
+                    appState.currentRide.metrics.averageSpeedMetersPerSecond
             } else if let location = appState.teammateLocations.first(
                 where: { $0.user.id == member.id }
             ) {
@@ -1033,8 +1101,12 @@ private struct TeamRideStatusSheet: View {
                     latitude: location.latitude,
                     longitude: location.longitude
                 )
+                speedMetersPerSecond = location.speedMetersPerSecond
+                averageSpeedMetersPerSecond = nil
             } else {
                 coordinate = nil
+                speedMetersPerSecond = nil
+                averageSpeedMetersPerSecond = nil
             }
             let distance = coordinate.map {
                 CLLocation(latitude: $0.latitude, longitude: $0.longitude)
@@ -1045,10 +1117,18 @@ private struct TeamRideStatusSheet: View {
                         )
                     )
             }
+            let estimatedDuration = distance.flatMap {
+                MeetingPointETAEstimator.estimate(
+                    distanceMeters: $0,
+                    currentSpeedMetersPerSecond: speedMetersPerSecond,
+                    averageSpeedMetersPerSecond: averageSpeedMetersPerSecond
+                )?.durationSeconds
+            }
             return MeetingPointMemberProgress(
                 id: member.id,
                 displayName: member.displayName,
                 distanceMeters: distance,
+                estimatedDurationSeconds: estimatedDuration,
                 isCurrentUser: isCurrentUser
             )
         }
@@ -1072,7 +1152,9 @@ private struct TeamRideStatusSheet: View {
         }
         return member.hasArrived
             ? "checkmark.circle.fill"
-            : "arrow.forward.circle.fill"
+            : member.estimatedDurationSeconds == nil
+                ? "pause.circle.fill"
+                : "arrow.forward.circle.fill"
     }
 
     private func meetingPointColor(
@@ -1093,7 +1175,35 @@ private struct TeamRideStatusSheet: View {
         if member.hasArrived {
             return "已到达 · \(distanceText(distance))"
         }
-        return "距集合点 \(distanceText(distance))"
+        let etaText = member.estimatedDurationSeconds.map {
+            " · 约 \(durationText($0))"
+        } ?? " · 等待移动"
+        return "距集合点 \(distanceText(distance))\(etaText)"
+    }
+
+    private func meetingPointProgressSummary(
+        _ progress: [MeetingPointMemberProgress]
+    ) -> String {
+        let unavailable = progress.filter { $0.distanceMeters == nil }.count
+        let enRoute = progress.count
+            - progress.filter(\.hasArrived).count
+            - unavailable
+        return "\(enRoute) 人途中 · \(unavailable) 人未共享位置"
+    }
+
+    private func durationText(_ duration: TimeInterval) -> String {
+        if duration <= 60 {
+            return "1 分钟"
+        }
+        let minutes = Int(ceil(duration / 60))
+        if minutes < 60 {
+            return "\(minutes) 分钟"
+        }
+        let hours = minutes / 60
+        let remainingMinutes = minutes % 60
+        return remainingMinutes == 0
+            ? "\(hours) 小时"
+            : "\(hours) 小时 \(remainingMinutes) 分钟"
     }
 }
 

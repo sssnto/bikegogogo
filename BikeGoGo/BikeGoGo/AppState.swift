@@ -60,7 +60,8 @@ final class AppState: ObservableObject {
     private var recorderNeedsRestart = false
     private var activeVoiceInvitationID: String?
     private var locationSharingRefreshTask: Task<Void, Never>?
-    private var lastLocationShareSentAt: Date?
+    private var liveLocationUploadPolicy = LiveLocationUploadPolicy()
+    private var isPublishingRideLocation = false
     private var teamSafetyMonitor = TeamRideSafetyMonitor()
     private var meetingPointArrivalMonitor = MeetingPointArrivalMonitor()
     private var routeDeviationMonitor = RouteDeviationMonitor()
@@ -586,7 +587,7 @@ final class AppState: ObservableObject {
         locationSharingGroupID = groupID
         isSharingRideLocation = true
         locationSharingMessage = nil
-        lastLocationShareSentAt = nil
+        liveLocationUploadPolicy.reset()
         await publishRideLocationIfNeeded(currentRide.points.last, force: true)
         await refreshTeammateLocations()
         await refreshTeamMeetingPoint()
@@ -602,7 +603,7 @@ final class AppState: ObservableObject {
         isSharingRideLocation = false
         teammateLocations = []
         locationSharingMessage = nil
-        lastLocationShareSentAt = nil
+        liveLocationUploadPolicy.reset()
         teamSafetyMonitor.reset()
         teamRideMemberStatuses = []
         teamMeetingPoint = nil
@@ -691,6 +692,7 @@ final class AppState: ObservableObject {
         force: Bool = false
     ) async {
         guard isSharingRideLocation,
+              !isPublishingRideLocation,
               let point,
               let groupID = locationSharingGroupID,
               let accessToken = accountClient.accessToken else { return }
@@ -698,18 +700,24 @@ final class AppState: ObservableObject {
            accuracy > RideLocationFilter.maximumTrackingHorizontalAccuracyMeters {
             return
         }
-        if !force, let lastLocationShareSentAt,
-           Date().timeIntervalSince(lastLocationShareSentAt) < 12 {
+        let requestedAt = Date()
+        guard liveLocationUploadPolicy.shouldUpload(
+            point,
+            at: requestedAt,
+            force: force
+        ) else {
             return
         }
 
+        isPublishingRideLocation = true
+        defer { isPublishingRideLocation = false }
         do {
             try await groupLiveLocationService.update(
                 groupID: groupID,
                 point: point,
                 accessToken: accessToken
             )
-            lastLocationShareSentAt = Date()
+            liveLocationUploadPolicy.markUploaded(point)
             locationSharingMessage = nil
         } catch {
             locationSharingMessage = "位置共享网络暂时中断"
@@ -862,11 +870,18 @@ final class AppState: ObservableObject {
         locationSharingRefreshTask?.cancel()
         locationSharingRefreshTask = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 15_000_000_000)
-                guard !Task.isCancelled, let self else { return }
+                guard let self else { return }
+                let refreshIntervalSeconds: UInt64 =
+                    self.currentRide.state == .recording
+                    && self.currentSpeedMetersPerSecond >= 1.5
+                    ? 12
+                    : 25
+                try? await Task.sleep(
+                    nanoseconds: refreshIntervalSeconds * 1_000_000_000
+                )
+                guard !Task.isCancelled else { return }
                 await self.publishRideLocationIfNeeded(
-                    self.currentRide.points.last,
-                    force: true
+                    self.currentRide.points.last
                 )
                 await self.refreshTeammateLocations()
                 await self.refreshTeamMeetingPoint()

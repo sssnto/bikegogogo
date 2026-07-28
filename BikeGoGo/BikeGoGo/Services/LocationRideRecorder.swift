@@ -20,10 +20,7 @@ final class LocationRideRecorder: NSObject, ObservableObject {
     override init() {
         super.init()
         manager.delegate = self
-        manager.desiredAccuracy = kCLLocationAccuracyBestForNavigation
-        manager.distanceFilter = 5
-        manager.activityType = .fitness
-        manager.pausesLocationUpdatesAutomatically = false
+        configureActiveTracking()
     }
 
     func requestAuthorization() {
@@ -46,6 +43,7 @@ final class LocationRideRecorder: NSObject, ObservableObject {
         locationAccuracyMeters = nil
         isWaitingForAccurateLocation = true
         isRecording = true
+        configureActiveTracking()
         manager.allowsBackgroundLocationUpdates = true
         manager.showsBackgroundLocationIndicator = true
         manager.startUpdatingLocation()
@@ -53,10 +51,14 @@ final class LocationRideRecorder: NSObject, ObservableObject {
 
     func pause() {
         isRecording = false
+        currentSpeedMetersPerSecond = 0
+        manager.stopUpdatingLocation()
     }
 
     func resume() {
         isRecording = true
+        configureActiveTracking()
+        manager.startUpdatingLocation()
     }
 
     func stop() {
@@ -72,6 +74,13 @@ final class LocationRideRecorder: NSObject, ObservableObject {
         self.points = points
         locationFilter.reset(lastAcceptedPoint: points.last)
         currentSpeedMetersPerSecond = points.last?.speedMetersPerSecond ?? 0
+    }
+
+    private func configureActiveTracking() {
+        manager.desiredAccuracy = kCLLocationAccuracyBest
+        manager.distanceFilter = 8
+        manager.activityType = .fitness
+        manager.pausesLocationUpdatesAutomatically = false
     }
 }
 
