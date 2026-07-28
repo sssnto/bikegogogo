@@ -77,7 +77,7 @@ test("PostgreSQL imports JSON once and remains the source of truth", {
     app = undefined;
 
     const mirror = JSON.parse(await readFile(dataFile, "utf8"));
-    assert.equal(mirror.version, 4);
+    assert.equal(mirror.version, 5);
     assert.equal(mirror.users[0].displayName, "Database Rider");
     const backup = JSON.parse(
       await readFile(`${dataFile}.pre-postgresql.json`, "utf8")
