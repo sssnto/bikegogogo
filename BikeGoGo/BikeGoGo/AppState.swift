@@ -37,6 +37,8 @@ final class AppState: ObservableObject {
     @Published private(set) var teamSafetyAlertsEnabled = true
     @Published private(set) var teamMeetingPoint: GroupMeetingPoint?
     @Published private(set) var isUpdatingTeamMeetingPoint = false
+    @Published private(set) var meetingPointArrivalEvaluation:
+        MeetingPointArrivalEvaluation?
     @Published private(set) var referenceRideID: UUID?
     @Published private(set) var routeDeviationEvaluation: RouteDeviationEvaluation?
 
@@ -60,6 +62,7 @@ final class AppState: ObservableObject {
     private var locationSharingRefreshTask: Task<Void, Never>?
     private var lastLocationShareSentAt: Date?
     private var teamSafetyMonitor = TeamRideSafetyMonitor()
+    private var meetingPointArrivalMonitor = MeetingPointArrivalMonitor()
     private var routeDeviationMonitor = RouteDeviationMonitor()
     private static let teamSafetyAlertsDefaultsKey = "bikegogo.teamSafetyAlertsEnabled"
 
@@ -167,6 +170,7 @@ final class AppState: ObservableObject {
                 await self.persistActiveRide()
                 await self.publishRideLocationIfNeeded(points.last)
                 await self.evaluateRouteDeviation(points.last)
+                await self.evaluateMeetingPointArrival(points.last)
             }
         }
 
@@ -602,6 +606,8 @@ final class AppState: ObservableObject {
         teamSafetyMonitor.reset()
         teamRideMemberStatuses = []
         teamMeetingPoint = nil
+        meetingPointArrivalMonitor.reset()
+        meetingPointArrivalEvaluation = nil
 
         guard let groupID, let accessToken else { return }
         do {
@@ -614,11 +620,16 @@ final class AppState: ObservableObject {
         }
     }
 
-    func setTeamMeetingPoint(groupID: String) async {
+    func setTeamMeetingPoint(groupID: String, title: String) async {
         guard let group = accountClient.groups.first(where: { $0.id == groupID }),
               group.isOwner,
               let accessToken = accountClient.accessToken else {
             rideAlertMessage = "只有小队创建者可以设置集合点。"
+            return
+        }
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedTitle.isEmpty else {
+            rideAlertMessage = "请输入集合点名称。"
             return
         }
         guard let point = currentRide.points.last,
@@ -632,12 +643,17 @@ final class AppState: ObservableObject {
         isUpdatingTeamMeetingPoint = true
         defer { isUpdatingTeamMeetingPoint = false }
         do {
-            teamMeetingPoint = try await groupLiveLocationService.setMeetingPoint(
+            let meetingPoint = try await groupLiveLocationService.setMeetingPoint(
                 groupID: groupID,
                 point: point,
+                title: String(trimmedTitle.prefix(40)),
                 accessToken: accessToken
             )
-            rideAlertMessage = "已将当前位置设为「\(group.name)」集合点，有效期 6 小时。"
+            teamMeetingPoint = meetingPoint
+            meetingPointArrivalMonitor.reset()
+            meetingPointArrivalEvaluation = nil
+            await evaluateMeetingPointArrival(point)
+            rideAlertMessage = "已将当前位置设为「\(meetingPoint.title)」，有效期 6 小时。"
         } catch {
             rideAlertMessage = "集合点设置失败，请检查网络后重试。"
             print("Setting team meeting point failed: \(error.localizedDescription)")
@@ -661,6 +677,8 @@ final class AppState: ObservableObject {
                 accessToken: accessToken
             )
             teamMeetingPoint = nil
+            meetingPointArrivalMonitor.reset()
+            meetingPointArrivalEvaluation = nil
             rideAlertMessage = "已清除「\(group.name)」集合点。"
         } catch {
             rideAlertMessage = "集合点清除失败，请检查网络后重试。"
@@ -729,10 +747,16 @@ final class AppState: ObservableObject {
               let groupID = locationSharingGroupID,
               let accessToken = accountClient.accessToken else { return }
         do {
-            teamMeetingPoint = try await groupLiveLocationService.meetingPoint(
+            let meetingPoint = try await groupLiveLocationService.meetingPoint(
                 groupID: groupID,
                 accessToken: accessToken
             )
+            if meetingPoint?.updatedAt != teamMeetingPoint?.updatedAt {
+                meetingPointArrivalMonitor.reset()
+                meetingPointArrivalEvaluation = nil
+            }
+            teamMeetingPoint = meetingPoint
+            await evaluateMeetingPointArrival(currentRide.points.last)
         } catch {
             print("Refreshing team meeting point failed: \(error.localizedDescription)")
         }
@@ -803,6 +827,28 @@ final class AppState: ObservableObject {
             identifier: "route-deviation-\(UUID().uuidString)",
             title: "路线偏航提醒",
             body: "你已持续偏离参考路线约 \(distance) 米，请查看地图确认方向。"
+        )
+    }
+
+    private func evaluateMeetingPointArrival(
+        _ riderLocation: RidePoint?
+    ) async {
+        guard let riderLocation, let teamMeetingPoint else {
+            meetingPointArrivalEvaluation = nil
+            return
+        }
+        let evaluation = meetingPointArrivalMonitor.evaluate(
+            riderLocation: riderLocation,
+            meetingPointLatitude: teamMeetingPoint.latitude,
+            meetingPointLongitude: teamMeetingPoint.longitude
+        )
+        meetingPointArrivalEvaluation = evaluation
+        guard evaluation.shouldAlert else { return }
+
+        await PushNotificationManager.shared.presentTeamSafetyNotification(
+            identifier: "meeting-point-arrival-\(UUID().uuidString)",
+            title: "已到达集合点",
+            body: "你已进入「\(teamMeetingPoint.title)」100 米范围。"
         )
     }
 

@@ -15,6 +15,9 @@ struct RideTrackingView: View {
     @State private var isConfirmingSOS = false
     @State private var selectedSOSGroupID: String?
     @State private var isShowingTeamStatus = false
+    @State private var isNamingMeetingPoint = false
+    @State private var meetingPointGroupID: String?
+    @State private var meetingPointDraft = ""
     @State private var camera = MapCameraPosition.userLocation(
         followsHeading: false,
         fallback: .region(defaultRideMapRegion)
@@ -95,6 +98,21 @@ struct RideTrackingView: View {
                 if let group = selectedSOSGroup {
                     Text("“\(group.name)”的其他成员将收到提醒和你当前的准确位置。此功能不会联系 110/120 等紧急服务。")
                 }
+            }
+            .alert("设置小队集合点", isPresented: $isNamingMeetingPoint) {
+                TextField("例如：公园东门", text: $meetingPointDraft)
+                Button("设置") {
+                    guard let meetingPointGroupID else { return }
+                    Task {
+                        await appState.setTeamMeetingPoint(
+                            groupID: meetingPointGroupID,
+                            title: meetingPointDraft
+                        )
+                    }
+                }
+                Button("取消", role: .cancel) {}
+            } message: {
+                Text("当前位置将作为集合点，有效期 6 小时。")
             }
             .alert(
                 "BikeGoGo",
@@ -184,6 +202,27 @@ struct RideTrackingView: View {
         }
         .overlay(alignment: .bottomLeading) {
             VStack(alignment: .leading, spacing: 6) {
+                if let meetingPointStatus,
+                   let meetingPoint = appState.teamMeetingPoint {
+                    Button {
+                        focusOnMeetingPoint(meetingPoint)
+                    } label: {
+                        Label(
+                            meetingPointStatus.text,
+                            systemImage: meetingPointStatus.icon
+                        )
+                        .font(.caption)
+                        .foregroundStyle(meetingPointStatus.color)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .background(
+                            .regularMaterial,
+                            in: RoundedRectangle(cornerRadius: 8)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+
                 if let routeDeviationStatus {
                     Label(
                         routeDeviationStatus.text,
@@ -332,12 +371,18 @@ struct RideTrackingView: View {
                     } label: {
                         Label("查看集合点", systemImage: "flag.checkered")
                     }
+                    Button {
+                        openMeetingPointInMaps(meetingPoint)
+                    } label: {
+                        Label("骑行导航到集合点", systemImage: "arrow.triangle.turn.up.right.diamond.fill")
+                    }
                 }
                 if group.isOwner {
                     Button {
-                        Task {
-                            await appState.setTeamMeetingPoint(groupID: group.id)
-                        }
+                        meetingPointGroupID = group.id
+                        meetingPointDraft = appState.teamMeetingPoint?.title
+                            ?? "小队集合点"
+                        isNamingMeetingPoint = true
                     } label: {
                         Label(
                             appState.teamMeetingPoint == nil
@@ -439,6 +484,24 @@ struct RideTrackingView: View {
                 )
             )
         }
+    }
+
+    private func openMeetingPointInMaps(_ meetingPoint: GroupMeetingPoint) {
+        let mapItem = MKMapItem(
+            placemark: MKPlacemark(
+                coordinate: CLLocationCoordinate2D(
+                    latitude: meetingPoint.latitude,
+                    longitude: meetingPoint.longitude
+                )
+            )
+        )
+        mapItem.name = meetingPoint.title
+        mapItem.openInMaps(
+            launchOptions: [
+                MKLaunchOptionsDirectionsModeKey:
+                    MKLaunchOptionsDirectionsModeCycling
+            ]
+        )
     }
 
     private var locationStatus: (text: String, icon: String, color: Color)? {
@@ -578,6 +641,41 @@ struct RideTrackingView: View {
         case .deviating:
             return ("已偏离参考路线 · \(distance) m", "exclamationmark.triangle.fill", .red)
         }
+    }
+
+    private var meetingPointStatus: (
+        text: String,
+        icon: String,
+        color: Color
+    )? {
+        guard let meetingPoint = appState.teamMeetingPoint,
+              let point = appState.currentRide.points.last else {
+            return nil
+        }
+        let distance = CLLocation(
+            latitude: point.latitude,
+            longitude: point.longitude
+        ).distance(
+            from: CLLocation(
+                latitude: meetingPoint.latitude,
+                longitude: meetingPoint.longitude
+            )
+        )
+        if appState.meetingPointArrivalEvaluation?.state == .arrived {
+            return (
+                "已到达 · \(meetingPoint.title)",
+                "checkmark.circle.fill",
+                .green
+            )
+        }
+        let distanceText = distance >= 1_000
+            ? String(format: "%.1f km", distance / 1_000)
+            : "\(Int(distance.rounded())) m"
+        return (
+            "\(meetingPoint.title) · \(distanceText)",
+            "flag.checkered",
+            distance <= 100 ? .green : .orange
+        )
     }
 
     private var metricsPanel: some View {
@@ -742,6 +840,18 @@ private struct MeetingPointAnnotation: View {
     }
 }
 
+private struct MeetingPointMemberProgress: Identifiable {
+    let id: String
+    let displayName: String
+    let distanceMeters: Double?
+    let isCurrentUser: Bool
+
+    var hasArrived: Bool {
+        guard let distanceMeters else { return false }
+        return distanceMeters <= 100
+    }
+}
+
 private struct TeamRideStatusSheet: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var appState: AppState
@@ -776,6 +886,34 @@ private struct TeamRideStatusSheet: View {
                             "设置人",
                             value: meetingPoint.setBy.displayName
                         )
+                        let progress = meetingPointMemberProgress(meetingPoint)
+                        if !progress.isEmpty {
+                            Divider()
+                            Text("成员到达情况")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            ForEach(progress) { member in
+                                HStack(spacing: 12) {
+                                    Image(
+                                        systemName: meetingPointIcon(for: member)
+                                    )
+                                    .foregroundStyle(
+                                        meetingPointColor(for: member)
+                                    )
+                                    .frame(width: 24)
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(
+                                            member.isCurrentUser
+                                                ? "\(member.displayName)（我）"
+                                                : member.displayName
+                                        )
+                                        Text(meetingPointDetail(for: member))
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -873,6 +1011,89 @@ private struct TeamRideStatusSheet: View {
             return "6 小时内"
         }
         return expiry.formatted(date: .omitted, time: .shortened)
+    }
+
+    private func meetingPointMemberProgress(
+        _ meetingPoint: GroupMeetingPoint
+    ) -> [MeetingPointMemberProgress] {
+        guard let group = appState.activeLocationSharingGroup else { return [] }
+        let currentUserID = appState.accountClient.currentUser?.id
+        return group.members.map { member in
+            let isCurrentUser = member.id == currentUserID
+            let coordinate: CLLocationCoordinate2D?
+            if isCurrentUser, let point = appState.currentRide.points.last {
+                coordinate = CLLocationCoordinate2D(
+                    latitude: point.latitude,
+                    longitude: point.longitude
+                )
+            } else if let location = appState.teammateLocations.first(
+                where: { $0.user.id == member.id }
+            ) {
+                coordinate = CLLocationCoordinate2D(
+                    latitude: location.latitude,
+                    longitude: location.longitude
+                )
+            } else {
+                coordinate = nil
+            }
+            let distance = coordinate.map {
+                CLLocation(latitude: $0.latitude, longitude: $0.longitude)
+                    .distance(
+                        from: CLLocation(
+                            latitude: meetingPoint.latitude,
+                            longitude: meetingPoint.longitude
+                        )
+                    )
+            }
+            return MeetingPointMemberProgress(
+                id: member.id,
+                displayName: member.displayName,
+                distanceMeters: distance,
+                isCurrentUser: isCurrentUser
+            )
+        }
+        .sorted {
+            if $0.isCurrentUser != $1.isCurrentUser {
+                return $0.isCurrentUser
+            }
+            if $0.hasArrived != $1.hasArrived {
+                return $0.hasArrived
+            }
+            return $0.displayName.localizedCompare($1.displayName)
+                == .orderedAscending
+        }
+    }
+
+    private func meetingPointIcon(
+        for member: MeetingPointMemberProgress
+    ) -> String {
+        if member.distanceMeters == nil {
+            return "location.slash"
+        }
+        return member.hasArrived
+            ? "checkmark.circle.fill"
+            : "arrow.forward.circle.fill"
+    }
+
+    private func meetingPointColor(
+        for member: MeetingPointMemberProgress
+    ) -> Color {
+        if member.distanceMeters == nil {
+            return .gray
+        }
+        return member.hasArrived ? .green : .orange
+    }
+
+    private func meetingPointDetail(
+        for member: MeetingPointMemberProgress
+    ) -> String {
+        guard let distance = member.distanceMeters else {
+            return "未共享本次位置"
+        }
+        if member.hasArrived {
+            return "已到达 · \(distanceText(distance))"
+        }
+        return "距集合点 \(distanceText(distance))"
     }
 }
 
