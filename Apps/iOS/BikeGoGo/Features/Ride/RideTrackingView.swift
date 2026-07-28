@@ -12,6 +12,8 @@ struct RideTrackingView: View {
     @EnvironmentObject private var appState: AppState
     @State private var isConfirmingFinish = false
     @State private var isConfirmingDiscard = false
+    @State private var isConfirmingSOS = false
+    @State private var selectedSOSGroupID: String?
     @State private var camera = MapCameraPosition.userLocation(
         followsHeading: false,
         fallback: .region(defaultRideMapRegion)
@@ -47,26 +49,45 @@ struct RideTrackingView: View {
                         }
                         .accessibilityLabel("定位到我的位置")
                     } else {
-                        Button(role: .destructive) {
-                            isConfirmingDiscard = true
+                        Menu {
+                            Button("放弃本次骑行", systemImage: "trash", role: .destructive) {
+                                isConfirmingDiscard = true
+                            }
                         } label: {
-                            Image(systemName: "trash")
+                            Image(systemName: "ellipsis.circle")
                         }
-                        .accessibilityLabel("放弃本次骑行")
+                        .accessibilityLabel("更多骑行操作")
                     }
                 }
             }
-            .confirmationDialog("结束并保存本次骑行？", isPresented: $isConfirmingFinish) {
-                Button("结束骑行", role: .destructive) {
+            .alert("结束骑行？", isPresented: $isConfirmingFinish) {
+                Button("结束并保存", role: .destructive) {
                     appState.finishRide()
                 }
                 Button("继续骑行", role: .cancel) {}
+            } message: {
+                Text("本次路线和骑行数据将保存到历史记录。")
             }
-            .confirmationDialog("放弃本次骑行？轨迹将不会保存。", isPresented: $isConfirmingDiscard) {
+            .alert("放弃本次骑行？", isPresented: $isConfirmingDiscard) {
                 Button("放弃骑行", role: .destructive) {
                     appState.discardCurrentRide()
                 }
                 Button("取消", role: .cancel) {}
+            } message: {
+                Text("本次路线和骑行数据不会保存。")
+            }
+            .alert("发送小队紧急求助？", isPresented: $isConfirmingSOS) {
+                Button("发送 SOS", role: .destructive) {
+                    guard let selectedSOSGroupID else { return }
+                    Task {
+                        await appState.sendTeamSOS(groupID: selectedSOSGroupID)
+                    }
+                }
+                Button("取消", role: .cancel) {}
+            } message: {
+                if let group = selectedSOSGroup {
+                    Text("“\(group.name)”的其他成员将收到提醒和你当前的准确位置。此功能不会联系 110/120 等紧急服务。")
+                }
             }
             .alert(
                 "BikeGoGo",
@@ -122,7 +143,7 @@ struct RideTrackingView: View {
             }
         }
         .overlay(alignment: .topTrailing) {
-            locationSharingMenu
+            rideMapActions
                 .padding(12)
         }
         .overlay(alignment: .bottomLeading) {
@@ -130,7 +151,7 @@ struct RideTrackingView: View {
                 Label(
                     locationSharingStatusText,
                     systemImage: appState.locationSharingMessage == nil
-                        ? "location.2.fill"
+                        ? "location.fill"
                         : "exclamationmark.triangle.fill"
                 )
                 .font(.caption)
@@ -158,6 +179,44 @@ struct RideTrackingView: View {
             }
             focusOnCurrentLocation()
         }
+    }
+
+    private var selectedSOSGroup: AppGroup? {
+        guard let selectedSOSGroupID else { return nil }
+        return appState.accountClient.groups.first { $0.id == selectedSOSGroupID }
+    }
+
+    @ViewBuilder
+    private var rideMapActions: some View {
+        let isActiveRide = appState.currentRide.state == .recording
+            || appState.currentRide.state == .paused
+        if isActiveRide, !appState.accountClient.groups.isEmpty {
+            HStack(spacing: 8) {
+                teamSOSMenu
+                locationSharingMenu
+            }
+        }
+    }
+
+    private var teamSOSMenu: some View {
+        Menu {
+            ForEach(appState.accountClient.groups) { group in
+                Button {
+                    selectedSOSGroupID = group.id
+                    isConfirmingSOS = true
+                } label: {
+                    Label(group.name, systemImage: "exclamationmark.triangle.fill")
+                }
+            }
+        } label: {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.title3)
+                .foregroundStyle(.red)
+                .frame(width: 44, height: 44)
+                .background(.regularMaterial, in: Circle())
+        }
+        .accessibilityLabel("向小队发送紧急求助")
+        .disabled(appState.isSendingTeamSOS)
     }
 
     private func focusOnCurrentLocation() {
@@ -233,10 +292,13 @@ struct RideTrackingView: View {
             } label: {
                 Image(
                     systemName: appState.isSharingRideLocation
-                        ? "location.2.fill"
-                        : "location.2"
+                        ? "location.fill"
+                        : "location"
                 )
                 .font(.title3)
+                .foregroundStyle(
+                    appState.isSharingRideLocation ? Color.green : Color.primary
+                )
                 .frame(width: 44, height: 44)
                 .background(.regularMaterial, in: Circle())
             }
@@ -307,11 +369,12 @@ struct RideTrackingView: View {
                 Button(role: .destructive) {
                     isConfirmingFinish = true
                 } label: {
-                    Label("结束", systemImage: "stop.fill")
+                    Label("结束骑行", systemImage: "stop.fill")
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.borderedProminent)
                 .controlSize(.large)
+                .tint(.red)
 
             case .paused:
                 Button {
@@ -326,11 +389,12 @@ struct RideTrackingView: View {
                 Button(role: .destructive) {
                     isConfirmingFinish = true
                 } label: {
-                    Label("结束", systemImage: "stop.fill")
+                    Label("结束骑行", systemImage: "stop.fill")
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.borderedProminent)
                 .controlSize(.large)
+                .tint(.red)
             }
         }
     }

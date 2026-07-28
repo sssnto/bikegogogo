@@ -31,6 +31,8 @@ final class AppState: ObservableObject {
     @Published private(set) var locationSharingGroupID: String?
     @Published private(set) var teammateLocations: [GroupLiveLocation] = []
     @Published private(set) var locationSharingMessage: String?
+    @Published private(set) var incomingTeamSOS: TeamSOSPushEvent?
+    @Published private(set) var isSendingTeamSOS = false
 
     private let rideStore = LocalRideStore()
     private let rideCloudClient = RideCloudClient()
@@ -133,6 +135,10 @@ final class AppState: ObservableObject {
             }
         }
         PushNotificationManager.shared.deliverPendingVoiceEvents()
+        PushNotificationManager.shared.onTeamSOSEvent = { [weak self] event in
+            self?.incomingTeamSOS = event
+        }
+        PushNotificationManager.shared.deliverPendingTeamSOSEvents()
     }
 
     func bootstrap() async {
@@ -408,6 +414,51 @@ final class AppState: ObservableObject {
     var activeLocationSharingGroup: AppGroup? {
         guard let locationSharingGroupID else { return nil }
         return accountClient.groups.first { $0.id == locationSharingGroupID }
+    }
+
+    func sendTeamSOS(groupID: String) async {
+        guard currentRide.state == .recording || currentRide.state == .paused else {
+            rideAlertMessage = "开始骑行后才能向小队发送紧急求助。"
+            return
+        }
+        guard let group = accountClient.groups.first(where: { $0.id == groupID }),
+              let accessToken = accountClient.accessToken else {
+            rideAlertMessage = "当前小队或账户状态不可用，请刷新后重试。"
+            return
+        }
+        guard let point = currentRide.points.last,
+              let accuracy = point.horizontalAccuracyMeters,
+              accuracy <= RideLocationFilter.maximumTrackingHorizontalAccuracyMeters else {
+            rideAlertMessage = "正在等待准确的 GPS 位置，请到开阔处稍后重试。"
+            return
+        }
+        guard !isSendingTeamSOS else { return }
+
+        isSendingTeamSOS = true
+        defer { isSendingTeamSOS = false }
+        if locationSharingGroupID != groupID || !isSharingRideLocation {
+            await startRideLocationSharing(groupID: groupID)
+        }
+
+        do {
+            let recipientCount = try await groupLiveLocationService.sendSOS(
+                groupID: groupID,
+                point: point,
+                accessToken: accessToken
+            )
+            if recipientCount == 0 {
+                rideAlertMessage = "\(group.name) 暂无其他成员，未发送求助通知。"
+            } else {
+                rideAlertMessage = "紧急求助已发出，并向 \(recipientCount) 位小队成员共享了当前位置。"
+            }
+        } catch {
+            rideAlertMessage = "紧急求助发送失败，请直接拨打电话或联系队友。"
+            print("Sending team SOS failed: \(error.localizedDescription)")
+        }
+    }
+
+    func dismissIncomingTeamSOS() {
+        incomingTeamSOS = nil
     }
 
     func startRideLocationSharing(groupID: String) async {

@@ -1,6 +1,8 @@
+import Foundation
 import SwiftUI
 
 struct RootView: View {
+    @Environment(\.openURL) private var openURL
     @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var appState: AppState
 
@@ -37,12 +39,46 @@ struct RootView: View {
                     .environmentObject(appState)
             }
         }
+        .alert(
+            "小队紧急求助",
+            isPresented: Binding(
+                get: { appState.incomingTeamSOS != nil },
+                set: { if !$0 { appState.dismissIncomingTeamSOS() } }
+            )
+        ) {
+            if let event = appState.incomingTeamSOS,
+               let mapURL = mapURL(for: event) {
+                Button("在地图中查看") {
+                    appState.dismissIncomingTeamSOS()
+                    openURL(mapURL)
+                }
+            }
+            Button("知道了", role: .cancel) {
+                appState.dismissIncomingTeamSOS()
+            }
+        } message: {
+            if let event = appState.incomingTeamSOS {
+                Text("\(event.senderName) 在“\(event.groupName)”中发出求助，请尽快联系。")
+            }
+        }
         .onChange(of: scenePhase) { _, newPhase in
             guard newPhase == .active else { return }
             Task {
                 await appState.refreshIncomingVoiceInvitations()
             }
         }
+    }
+
+    private func mapURL(for event: TeamSOSPushEvent) -> URL? {
+        var components = URLComponents()
+        components.scheme = "https"
+        components.host = "maps.apple.com"
+        components.path = "/"
+        components.queryItems = [
+            URLQueryItem(name: "ll", value: "\(event.latitude),\(event.longitude)"),
+            URLQueryItem(name: "q", value: "\(event.senderName) 的求助位置")
+        ]
+        return components.url
     }
 }
 

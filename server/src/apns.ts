@@ -17,6 +17,7 @@ export type PushNotification = {
     | "friend_request"
     | "friend_accepted"
     | "group_invitation"
+    | "group_sos"
     | "voice_invitation"
     | "voice_cancelled";
   entityId?: string;

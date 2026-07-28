@@ -31,15 +31,7 @@ final class GroupLiveLocationService {
         point: RidePoint,
         accessToken: String
     ) async throws {
-        let body = LiveLocationBody(
-            latitude: point.latitude,
-            longitude: point.longitude,
-            horizontalAccuracyMeters: point.horizontalAccuracyMeters,
-            speedMetersPerSecond: point.speedMetersPerSecond,
-            courseDegrees: point.courseDegrees,
-            capturedAt: Self.timestampFormatter.string(from: point.timestamp)
-        )
-        let data = try JSONEncoder().encode(body)
+        let data = try JSONEncoder().encode(Self.body(for: point))
         let _: LiveLocationResponse = try await request(
             groupID: groupID,
             suffix: "live-location",
@@ -47,6 +39,22 @@ final class GroupLiveLocationService {
             body: data,
             accessToken: accessToken
         )
+    }
+
+    func sendSOS(
+        groupID: String,
+        point: RidePoint,
+        accessToken: String
+    ) async throws -> Int {
+        let data = try JSONEncoder().encode(Self.body(for: point))
+        let response: TeamSOSResponse = try await request(
+            groupID: groupID,
+            suffix: "sos",
+            method: "POST",
+            body: data,
+            accessToken: accessToken
+        )
+        return response.recipientCount
     }
 
     func locations(
@@ -119,6 +127,17 @@ final class GroupLiveLocationService {
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter
     }()
+
+    private static func body(for point: RidePoint) -> LiveLocationBody {
+        LiveLocationBody(
+            latitude: point.latitude,
+            longitude: point.longitude,
+            horizontalAccuracyMeters: point.horizontalAccuracyMeters,
+            speedMetersPerSecond: point.speedMetersPerSecond,
+            courseDegrees: point.courseDegrees,
+            capturedAt: timestampFormatter.string(from: point.timestamp)
+        )
+    }
 }
 
 private struct LiveLocationBody: Encodable {
@@ -136,6 +155,11 @@ private struct LiveLocationResponse: Decodable {
 
 private struct LiveLocationsResponse: Decodable {
     let locations: [GroupLiveLocation]
+}
+
+private struct TeamSOSResponse: Decodable {
+    let sent: Bool
+    let recipientCount: Int
 }
 
 private struct ServerErrorResponse: Decodable {

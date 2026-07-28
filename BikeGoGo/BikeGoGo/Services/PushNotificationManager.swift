@@ -11,6 +11,16 @@ enum VoicePushEvent: Equatable {
     case cancelled(invitationID: String)
 }
 
+struct TeamSOSPushEvent: Equatable {
+    let groupID: String
+    let groupName: String
+    let senderUserID: String
+    let senderName: String
+    let latitude: Double
+    let longitude: Double
+    let capturedAt: String
+}
+
 @MainActor
 final class PushNotificationManager {
     static let shared = PushNotificationManager()
@@ -20,7 +30,9 @@ final class PushNotificationManager {
     private var accessToken: String?
     private var deviceToken: String?
     private var pendingVoiceEvents: [VoicePushEvent] = []
+    private var pendingTeamSOSEvents: [TeamSOSPushEvent] = []
     var onVoiceEvent: ((VoicePushEvent) -> Void)?
+    var onTeamSOSEvent: ((TeamSOSPushEvent) -> Void)?
     private static let deviceTokenKey = "bikegogo.pushDeviceToken"
 
     private var environment: String {
@@ -94,6 +106,18 @@ final class PushNotificationManager {
     @discardableResult
     func handleNotification(userInfo: [AnyHashable: Any]) -> Bool {
         guard let event = userInfo["event"] as? String else { return false }
+        if event == "group_sos" {
+            guard let teamSOSEvent = Self.teamSOSEvent(from: userInfo) else {
+                return false
+            }
+            if let onTeamSOSEvent {
+                onTeamSOSEvent(teamSOSEvent)
+            } else {
+                pendingTeamSOSEvents.append(teamSOSEvent)
+            }
+            return true
+        }
+
         let voiceEvent: VoicePushEvent
         switch event {
         case "voice_invitation":
@@ -121,6 +145,38 @@ final class PushNotificationManager {
         let events = pendingVoiceEvents
         pendingVoiceEvents.removeAll()
         events.forEach(onVoiceEvent)
+    }
+
+    func deliverPendingTeamSOSEvents() {
+        guard let onTeamSOSEvent else { return }
+        let events = pendingTeamSOSEvents
+        pendingTeamSOSEvents.removeAll()
+        events.forEach(onTeamSOSEvent)
+    }
+
+    private static func teamSOSEvent(
+        from userInfo: [AnyHashable: Any]
+    ) -> TeamSOSPushEvent? {
+        guard let groupID = (userInfo["groupId"] ?? userInfo["entityId"]) as? String,
+              let groupName = userInfo["groupName"] as? String,
+              let senderUserID = userInfo["senderUserId"] as? String,
+              let senderName = userInfo["senderName"] as? String,
+              let latitudeText = userInfo["latitude"] as? String,
+              let latitude = Double(latitudeText),
+              let longitudeText = userInfo["longitude"] as? String,
+              let longitude = Double(longitudeText),
+              let capturedAt = userInfo["capturedAt"] as? String else {
+            return nil
+        }
+        return TeamSOSPushEvent(
+            groupID: groupID,
+            groupName: groupName,
+            senderUserID: senderUserID,
+            senderName: senderName,
+            latitude: latitude,
+            longitude: longitude,
+            capturedAt: capturedAt
+        )
     }
 
     private func registerCurrentToken() async {

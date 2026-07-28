@@ -164,6 +164,20 @@ DELETE /v1/groups/{groupId}/live-location
 PostgreSQL 或 JSON 镜像。结束骑行、手动停止共享、退出小队、被移出小队或解散小队时会
 立即清除对应位置。
 
+小队成员在骑行中发送紧急求助：
+
+```http
+POST /v1/groups/{groupId}/sos
+Authorization: Bearer <accessToken>
+Content-Type: application/json
+```
+
+请求体与 `PUT live-location` 相同。服务端会立即刷新发送者的临时位置，并向小队内除
+发送者外的成员发送 `group_sos` APNs 通知。推送包含小队、发送者、坐标和采集时间，
+接收端可打开 Apple 地图查看。该接口每个来源 10 分钟最多调用 3 次；非小队成员返回
+`403`。SOS 及坐标不写入 PostgreSQL，位置仍按 90 秒规则自动过期。该功能只通知
+BikeGoGo 小队成员，不会联系公共紧急救援服务。
+
 ## 推送设备
 
 iOS 获取 APNs device token 后，将它绑定到当前登录账号：
@@ -190,7 +204,7 @@ Authorization: Bearer <accessToken>
 
 `sandbox` 用于 Xcode Debug 真机，`production` 用于 TestFlight/App Store。Token 只能绑定
 一个 BikeGoGo 账号；重新绑定会自动转移归属。好友申请、申请通过、小队邀请和语音
-呼叫会触发普通 APNs alert。推送失败不会回滚业务操作，APNs 确认失效的 Token 会
+呼叫和小队 SOS 会触发普通 APNs alert。推送失败不会回滚业务操作，APNs 确认失效的 Token 会
 自动删除。
 
 ## 语音

@@ -527,6 +527,48 @@ export async function createApp(config: AppConfig) {
     return reply.status(204).send();
   });
 
+  app.post("/v1/groups/:groupId/sos", {
+    config: { rateLimit: { max: 3, timeWindow: "10 minutes" } }
+  }, async (request) => {
+    const currentUser = authenticatedUser(request);
+    const params = groupParamsSchema.parse(request.params);
+    const body = liveLocationBodySchema.parse(request.body);
+    const group = requireGroupMembership(params.groupId, currentUser.id);
+    const location = liveLocations.upsert(
+      params.groupId,
+      currentUser.id,
+      body
+    );
+    const recipientIds = group.memberIds.filter(
+      (memberId) => memberId !== currentUser.id
+    );
+
+    await Promise.all(recipientIds.map((recipientId) => notifyUser(
+      recipientId,
+      {
+        title: "小队紧急求助",
+        body: `${currentUser.displayName} 在骑行中发出紧急求助，请尽快联系并查看位置。`,
+        event: "group_sos",
+        entityId: params.groupId,
+        data: {
+          groupId: params.groupId,
+          groupName: group.name,
+          senderUserId: currentUser.id,
+          senderName: currentUser.displayName,
+          latitude: String(location.latitude),
+          longitude: String(location.longitude),
+          capturedAt: location.capturedAt
+        }
+      }
+    )));
+
+    return {
+      sent: true,
+      recipientCount: recipientIds.length,
+      location: publicLiveLocation(store, location)
+    };
+  });
+
   const tokenRequestSchema = z.object({
     canPublish: z.boolean().default(true),
     canSubscribe: z.boolean().default(true)
