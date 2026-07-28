@@ -26,42 +26,7 @@ struct RideTrackingView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                Map(position: $camera) {
-                    UserAnnotation()
-
-                    if coordinates.count > 1 {
-                        MapPolyline(coordinates: coordinates)
-                            .stroke(.green, lineWidth: 5)
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .frame(height: 320)
-                .overlay(alignment: .topLeading) {
-                    if let locationStatus {
-                        Label(locationStatus.text, systemImage: locationStatus.icon)
-                            .font(.caption)
-                            .foregroundStyle(locationStatus.color)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 8)
-                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
-                            .padding(12)
-                    }
-                }
-                .onChange(of: coordinates.count) {
-                    guard let latest = coordinates.last else { return }
-                    camera = .region(
-                        MKCoordinateRegion(
-                            center: latest,
-                            span: MKCoordinateSpan(latitudeDelta: 0.012, longitudeDelta: 0.012)
-                        )
-                    )
-                }
-                .onChange(of: appState.locationAuthorizationStatus) { _, status in
-                    guard status == .authorizedAlways || status == .authorizedWhenInUse else {
-                        return
-                    }
-                    focusOnCurrentLocation()
-                }
+                rideMap
 
                 metricsPanel
                     .padding(16)
@@ -119,6 +84,82 @@ struct RideTrackingView: View {
         }
     }
 
+    private var rideMap: some View {
+        Map(position: $camera) {
+            UserAnnotation()
+
+            ForEach(appState.teammateLocations) { location in
+                Annotation(
+                    location.user.displayName,
+                    coordinate: CLLocationCoordinate2D(
+                        latitude: location.latitude,
+                        longitude: location.longitude
+                    )
+                ) {
+                    TeammateLocationAnnotation(
+                        name: location.user.displayName,
+                        speedMetersPerSecond: location.speedMetersPerSecond
+                    )
+                }
+            }
+
+            if coordinates.count > 1 {
+                MapPolyline(coordinates: coordinates)
+                    .stroke(.green, lineWidth: 5)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 320)
+        .overlay(alignment: .topLeading) {
+            if let locationStatus {
+                Label(locationStatus.text, systemImage: locationStatus.icon)
+                    .font(.caption)
+                    .foregroundStyle(locationStatus.color)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+                    .padding(12)
+            }
+        }
+        .overlay(alignment: .topTrailing) {
+            locationSharingMenu
+                .padding(12)
+        }
+        .overlay(alignment: .bottomLeading) {
+            if appState.isSharingRideLocation {
+                Label(
+                    locationSharingStatusText,
+                    systemImage: appState.locationSharingMessage == nil
+                        ? "location.2.fill"
+                        : "exclamationmark.triangle.fill"
+                )
+                .font(.caption)
+                .foregroundStyle(
+                    appState.locationSharingMessage == nil ? Color.primary : Color.orange
+                )
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+                .padding(12)
+            }
+        }
+        .onChange(of: coordinates.count) {
+            guard let latest = coordinates.last else { return }
+            camera = .region(
+                MKCoordinateRegion(
+                    center: latest,
+                    span: MKCoordinateSpan(latitudeDelta: 0.012, longitudeDelta: 0.012)
+                )
+            )
+        }
+        .onChange(of: appState.locationAuthorizationStatus) { _, status in
+            guard status == .authorizedAlways || status == .authorizedWhenInUse else {
+                return
+            }
+            focusOnCurrentLocation()
+        }
+    }
+
     private func focusOnCurrentLocation() {
         withAnimation(.easeInOut(duration: 0.3)) {
             camera = .userLocation(
@@ -155,6 +196,63 @@ struct RideTrackingView: View {
             "location.fill",
             .green
         )
+    }
+
+    @ViewBuilder
+    private var locationSharingMenu: some View {
+        let isActiveRide = appState.currentRide.state == .recording
+            || appState.currentRide.state == .paused
+
+        if isActiveRide, !appState.accountClient.groups.isEmpty {
+            Menu {
+                ForEach(appState.accountClient.groups) { group in
+                    Button {
+                        Task {
+                            await appState.startRideLocationSharing(groupID: group.id)
+                        }
+                    } label: {
+                        Label(
+                            group.name,
+                            systemImage: appState.locationSharingGroupID == group.id
+                                ? "checkmark.circle.fill"
+                                : "person.2.fill"
+                        )
+                    }
+                }
+
+                if appState.isSharingRideLocation {
+                    Divider()
+                    Button(role: .destructive) {
+                        Task {
+                            await appState.stopRideLocationSharing()
+                        }
+                    } label: {
+                        Label("停止位置共享", systemImage: "location.slash.fill")
+                    }
+                }
+            } label: {
+                Image(
+                    systemName: appState.isSharingRideLocation
+                        ? "location.2.fill"
+                        : "location.2"
+                )
+                .font(.title3)
+                .frame(width: 44, height: 44)
+                .background(.regularMaterial, in: Circle())
+            }
+            .accessibilityLabel(
+                appState.isSharingRideLocation ? "管理小队位置共享" : "开启小队位置共享"
+            )
+        }
+    }
+
+    private var locationSharingStatusText: String {
+        if let message = appState.locationSharingMessage {
+            return message
+        }
+        let groupName = appState.activeLocationSharingGroup?.name ?? "小队"
+        let teammateCount = appState.teammateLocations.count
+        return "\(groupName) · \(teammateCount) 位队友在线"
     }
 
     private var metricsPanel: some View {
@@ -243,6 +341,40 @@ struct RideTrackingView: View {
         let minutes = (totalSeconds % 3_600) / 60
         let seconds = totalSeconds % 60
         return String(format: "%02d:%02d:%02d", hours, minutes, seconds)
+    }
+}
+
+private struct TeammateLocationAnnotation: View {
+    var name: String
+    var speedMetersPerSecond: Double?
+
+    var body: some View {
+        VStack(spacing: 3) {
+            ZStack {
+                Circle()
+                    .fill(.blue)
+                    .frame(width: 34, height: 34)
+                    .shadow(radius: 2, y: 1)
+                Image(systemName: "person.fill")
+                    .font(.body)
+                    .foregroundStyle(.white)
+            }
+
+            Text(annotationText)
+                .font(.caption2)
+                .fontWeight(.semibold)
+                .lineLimit(1)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
+        }
+    }
+
+    private var annotationText: String {
+        guard let speedMetersPerSecond, speedMetersPerSecond >= 0.5 else {
+            return name
+        }
+        return "\(name) \(Int((speedMetersPerSecond * 3.6).rounded())) km/h"
     }
 }
 

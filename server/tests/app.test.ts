@@ -697,6 +697,103 @@ test("group membership controls management and group voice access", async () => 
   }
 });
 
+test("group members can share temporary ride locations", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "bikegogogo-test-"));
+  const dataFile = path.join(directory, "data.json");
+  const app = await createApp(configFor(dataFile));
+
+  try {
+    const owner = (await app.inject({
+      method: "POST",
+      url: "/v1/auth/guest",
+      payload: { deviceId: "location-owner-device", displayName: "Location Owner" }
+    })).json();
+    const member = (await app.inject({
+      method: "POST",
+      url: "/v1/auth/guest",
+      payload: { deviceId: "location-member-device", displayName: "Location Member" }
+    })).json();
+    const outsider = (await app.inject({
+      method: "POST",
+      url: "/v1/auth/guest",
+      payload: { deviceId: "location-outsider-device", displayName: "Outsider" }
+    })).json();
+
+    const friendRequest = await app.inject({
+      method: "POST",
+      url: "/v1/friends/requests",
+      headers: { authorization: `Bearer ${owner.accessToken}` },
+      payload: { friendCode: member.user.friendCode }
+    });
+    await app.inject({
+      method: "POST",
+      url: `/v1/friends/requests/${friendRequest.json().request.id}/accept`,
+      headers: { authorization: `Bearer ${member.accessToken}` }
+    });
+    const group = (await app.inject({
+      method: "POST",
+      url: "/v1/groups",
+      headers: { authorization: `Bearer ${owner.accessToken}` },
+      payload: { name: "Location Riders" }
+    })).json().group;
+    await app.inject({
+      method: "POST",
+      url: `/v1/groups/${group.id}/members`,
+      headers: { authorization: `Bearer ${owner.accessToken}` },
+      payload: { userId: member.user.id }
+    });
+
+    const forbidden = await app.inject({
+      method: "GET",
+      url: `/v1/groups/${group.id}/live-locations`,
+      headers: { authorization: `Bearer ${outsider.accessToken}` }
+    });
+    assert.equal(forbidden.statusCode, 403);
+
+    const shared = await app.inject({
+      method: "PUT",
+      url: `/v1/groups/${group.id}/live-location`,
+      headers: { authorization: `Bearer ${member.accessToken}` },
+      payload: {
+        latitude: 39.9042,
+        longitude: 116.4074,
+        horizontalAccuracyMeters: 8,
+        speedMetersPerSecond: 5.5,
+        courseDegrees: 120,
+        capturedAt: "2026-07-28T00:00:00.000Z"
+      }
+    });
+    assert.equal(shared.statusCode, 200);
+    assert.equal(shared.json().location.user.id, member.user.id);
+
+    const visible = await app.inject({
+      method: "GET",
+      url: `/v1/groups/${group.id}/live-locations`,
+      headers: { authorization: `Bearer ${owner.accessToken}` }
+    });
+    assert.equal(visible.statusCode, 200);
+    assert.equal(visible.json().locations.length, 1);
+    assert.equal(visible.json().locations[0].latitude, 39.9042);
+
+    const stopped = await app.inject({
+      method: "DELETE",
+      url: `/v1/groups/${group.id}/live-location`,
+      headers: { authorization: `Bearer ${member.accessToken}` }
+    });
+    assert.equal(stopped.statusCode, 204);
+
+    const afterStop = await app.inject({
+      method: "GET",
+      url: `/v1/groups/${group.id}/live-locations`,
+      headers: { authorization: `Bearer ${owner.accessToken}` }
+    });
+    assert.deepEqual(afterStop.json().locations, []);
+  } finally {
+    await app.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("finished rides sync per account and survive reload", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "bikegogogo-test-"));
   const dataFile = path.join(directory, "data.json");

@@ -27,6 +27,10 @@ final class AppState: ObservableObject {
     @Published private(set) var outgoingVoiceInvitation: VoiceInvitation?
     @Published private(set) var isHandlingVoiceInvitation = false
     @Published var voiceCallMessage: String?
+    @Published private(set) var isSharingRideLocation = false
+    @Published private(set) var locationSharingGroupID: String?
+    @Published private(set) var teammateLocations: [GroupLiveLocation] = []
+    @Published private(set) var locationSharingMessage: String?
 
     private let rideStore = LocalRideStore()
     private let rideCloudClient = RideCloudClient()
@@ -36,6 +40,7 @@ final class AppState: ObservableObject {
     let watchBridge = WatchSessionBridge()
     private let watchWorkoutLauncher = WatchWorkoutLauncher()
     private let voiceTokenService = VoiceTokenService()
+    private let groupLiveLocationService = GroupLiveLocationService()
     private let localUserID: String
     private let localDisplayName: String
     private var cancellables: Set<AnyCancellable> = []
@@ -44,6 +49,8 @@ final class AppState: ObservableObject {
     private var activeSegmentStartedAt: Date?
     private var recorderNeedsRestart = false
     private var activeVoiceInvitationID: String?
+    private var locationSharingRefreshTask: Task<Void, Never>?
+    private var lastLocationShareSentAt: Date?
 
     init() {
         let identityKey = "bikegogo.localVoiceIdentity"
@@ -55,11 +62,10 @@ final class AppState: ObservableObject {
             localUserID = newIdentity
         }
         localDisplayName = "骑友-\(localUserID.prefix(4).uppercased())"
-        accountClient.beforeSignOut = { [weak accountClient] in
-            guard let accessToken = accountClient?.accessToken else { return }
-            await PushNotificationManager.shared.unregisterCurrentToken(
-                accessToken: accessToken
-            )
+        accountClient.beforeSignOut = { [weak self] in
+            guard let self, let accessToken = self.accountClient.accessToken else { return }
+            await PushNotificationManager.shared.unregisterCurrentToken(accessToken: accessToken)
+            await self.stopRideLocationSharing()
         }
 
         accountClient.$accessToken
@@ -137,6 +143,7 @@ final class AppState: ObservableObject {
                 self.currentRide.metrics = RideStatisticsCalculator.metrics(for: points)
                 self.currentRide.metrics.elapsedDurationSeconds = self.rideElapsedDuration()
                 await self.persistActiveRide()
+                await self.publishRideLocationIfNeeded(points.last)
             }
         }
 
@@ -253,6 +260,7 @@ final class AppState: ObservableObject {
             }
         }
         Task {
+            await stopRideLocationSharing()
             try? await rideStore.clearActiveRide()
         }
         watchBridge.sendRideState(.finished)
@@ -270,6 +278,7 @@ final class AppState: ObservableObject {
         activeSegmentStartedAt = nil
         recorderNeedsRestart = false
         Task {
+            await stopRideLocationSharing()
             try? await rideStore.clearActiveRide()
         }
     }
@@ -394,6 +403,128 @@ final class AppState: ObservableObject {
         await voiceClient.setMuted(!voiceClient.isMuted)
         voiceRoom.isMuted = voiceClient.isMuted
         watchBridge.sendMuteState(voiceClient.isMuted)
+    }
+
+    var activeLocationSharingGroup: AppGroup? {
+        guard let locationSharingGroupID else { return nil }
+        return accountClient.groups.first { $0.id == locationSharingGroupID }
+    }
+
+    func startRideLocationSharing(groupID: String) async {
+        guard currentRide.state == .recording || currentRide.state == .paused else {
+            rideAlertMessage = "开始骑行后才能共享本次位置。"
+            return
+        }
+        guard accountClient.groups.contains(where: { $0.id == groupID }),
+              accountClient.accessToken != nil else {
+            rideAlertMessage = "请先加入一个小队并建立账户。"
+            return
+        }
+
+        if let previousGroupID = locationSharingGroupID,
+           previousGroupID != groupID {
+            await stopRideLocationSharing()
+        }
+
+        locationSharingGroupID = groupID
+        isSharingRideLocation = true
+        locationSharingMessage = nil
+        lastLocationShareSentAt = nil
+        await publishRideLocationIfNeeded(currentRide.points.last, force: true)
+        await refreshTeammateLocations()
+        startLocationSharingRefreshLoop()
+    }
+
+    func stopRideLocationSharing() async {
+        locationSharingRefreshTask?.cancel()
+        locationSharingRefreshTask = nil
+        let groupID = locationSharingGroupID
+        let accessToken = accountClient.accessToken
+        locationSharingGroupID = nil
+        isSharingRideLocation = false
+        teammateLocations = []
+        locationSharingMessage = nil
+        lastLocationShareSentAt = nil
+
+        guard let groupID, let accessToken else { return }
+        do {
+            try await groupLiveLocationService.stop(
+                groupID: groupID,
+                accessToken: accessToken
+            )
+        } catch {
+            print("Stopping ride location sharing failed: \(error.localizedDescription)")
+        }
+    }
+
+    private func publishRideLocationIfNeeded(
+        _ point: RidePoint?,
+        force: Bool = false
+    ) async {
+        guard isSharingRideLocation,
+              let point,
+              let groupID = locationSharingGroupID,
+              let accessToken = accountClient.accessToken else { return }
+        if let accuracy = point.horizontalAccuracyMeters,
+           accuracy > RideLocationFilter.maximumTrackingHorizontalAccuracyMeters {
+            return
+        }
+        if !force, let lastLocationShareSentAt,
+           Date().timeIntervalSince(lastLocationShareSentAt) < 12 {
+            return
+        }
+
+        do {
+            try await groupLiveLocationService.update(
+                groupID: groupID,
+                point: point,
+                accessToken: accessToken
+            )
+            lastLocationShareSentAt = Date()
+            locationSharingMessage = nil
+        } catch {
+            locationSharingMessage = "位置共享网络暂时中断"
+            print("Publishing ride location failed: \(error.localizedDescription)")
+        }
+    }
+
+    private func refreshTeammateLocations() async {
+        guard isSharingRideLocation,
+              let groupID = locationSharingGroupID,
+              let accessToken = accountClient.accessToken else { return }
+        guard accountClient.groups.contains(where: { $0.id == groupID }) else {
+            await stopRideLocationSharing()
+            return
+        }
+
+        do {
+            let locations = try await groupLiveLocationService.locations(
+                groupID: groupID,
+                accessToken: accessToken
+            )
+            teammateLocations = locations.filter {
+                $0.user.id != accountClient.currentUser?.id
+            }
+            locationSharingMessage = nil
+        } catch {
+            locationSharingMessage = "队友位置暂时无法刷新"
+            print("Refreshing teammate locations failed: \(error.localizedDescription)")
+        }
+    }
+
+    private func startLocationSharingRefreshLoop() {
+        locationSharingRefreshTask?.cancel()
+        locationSharingRefreshTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 15_000_000_000)
+                guard !Task.isCancelled, let self else { return }
+                await self.publishRideLocationIfNeeded(
+                    self.currentRide.points.last,
+                    force: true
+                )
+                await self.refreshTeammateLocations()
+            }
+        }
     }
 
     private func cancelOutgoingVoiceInvitation() async {

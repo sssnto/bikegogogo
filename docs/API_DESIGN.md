@@ -130,6 +130,40 @@ DELETE /v1/groups/{groupId}
 只有创建者可以邀请、移出成员或解散小队；被邀请人必须已经是创建者的好友。普通成员
 可以通过删除自己的成员关系退出小队。每个小队当前最多 20 人。
 
+### 小队骑行实时位置
+
+小队成员可以在骑行页主动开启临时位置共享：
+
+```http
+PUT /v1/groups/{groupId}/live-location
+Authorization: Bearer <accessToken>
+Content-Type: application/json
+```
+
+```json
+{
+  "latitude": 39.9042,
+  "longitude": 116.4074,
+  "horizontalAccuracy": 8.5,
+  "speed": 6.2,
+  "course": 85,
+  "capturedAt": "2026-07-28T08:30:00.000Z"
+}
+```
+
+查询当前仍有效的小队成员位置，或主动停止共享：
+
+```http
+GET    /v1/groups/{groupId}/live-locations
+DELETE /v1/groups/{groupId}/live-location
+```
+
+三个接口都要求当前账号是该小队成员，否则返回 `403`。客户端默认不开启共享，只接受
+定位精度符合骑行记录要求的位置，并约每 12 秒上报、每 15 秒刷新。服务端以接收时间为准
+保存最近位置，90 秒没有更新就自动过期；位置仅保存在当前服务进程内存中，不写入
+PostgreSQL 或 JSON 镜像。结束骑行、手动停止共享、退出小队、被移出小队或解散小队时会
+立即清除对应位置。
+
 ## 推送设备
 
 iOS 获取 APNs device token 后，将它绑定到当前登录账号：

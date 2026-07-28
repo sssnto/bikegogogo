@@ -375,6 +375,9 @@ POST  /v1/groups
 POST  /v1/groups/{groupId}/members
 DELETE /v1/groups/{groupId}/members/{userId}
 DELETE /v1/groups/{groupId}
+GET   /v1/groups/{groupId}/live-locations
+PUT   /v1/groups/{groupId}/live-location
+DELETE /v1/groups/{groupId}/live-location
 PUT   /v1/devices/push-token
 DELETE /v1/devices/push-token
 GET   /v1/voice/invitations
@@ -390,6 +393,22 @@ DELETE /v1/rides/{rideId}
 
 除 `POST /v1/auth/guest` 和 `POST /v1/auth/apple` 外，这些接口都要求
 `Authorization: Bearer <accessToken>`。完整请求示例见 `docs/API_DESIGN.md`。
+
+### 小队实时位置部署说明
+
+小队实时位置共享复用现有 HTTPS 后端和账户鉴权，不需要新增环境变量、中间件、数据卷
+或公网端口。升级镜像后按普通流程重建服务端即可：
+
+```bash
+docker compose pull bikegogogo-server
+docker compose up -d --force-recreate bikegogogo-server
+docker compose logs --tail=100 bikegogogo-server
+curl https://bikegogogo-server.sssnto.cn:8443/health
+```
+
+实时位置仅在后端进程内存中保留 90 秒，容器重启会立即清空，这是预期的隐私保护行为。
+当前 NAS 应只运行一个 `bikegogogo-server` 实例；如果未来要横向扩展为多个实例，需要先
+用 Redis 等共享的短期存储替换进程内存，否则不同实例查询到的位置可能不一致。
 
 ### 获取 LiveKit 语音房间 Token
 
@@ -441,6 +460,7 @@ Authorization: Bearer <accessToken>
 - PostgreSQL 和 JSON 镜像都包含路线、账号、会话和推送 token，应纳入 NAS 加密备份；
   不要把数据卷暴露为网络共享。
 - APNs 只需要容器主动访问 Apple 的 TCP `443`，不新增任何公网入站端口。
+- 小队实时位置只保留 90 秒且不进入数据库；服务端仍会校验 Bearer token 和小队成员关系。
 - 当前数据库状态使用 PostgreSQL 的事务与版本号保护，但仍是单行 JSONB 模型，适合小规模
   TestFlight 内测；扩大用户量前再按用户、关系和骑行记录拆分为规范化数据表。
 

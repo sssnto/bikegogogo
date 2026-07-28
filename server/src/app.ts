@@ -23,6 +23,10 @@ import {
   type UserRecord,
   type VoiceInvitationRecord
 } from "./data-store.js";
+import {
+  LiveLocationStore,
+  type LiveLocationRecord
+} from "./live-location-store.js";
 
 export type AppConfig = {
   livekitUrl: string;
@@ -94,6 +98,20 @@ const publicVoiceInvitation = (
   expiresAt: invitation.expiresAt
 });
 
+const publicLiveLocation = (
+  store: DataStore,
+  location: LiveLocationRecord
+) => ({
+  user: publicUser(store.userById(location.userId)!),
+  latitude: location.latitude,
+  longitude: location.longitude,
+  horizontalAccuracyMeters: location.horizontalAccuracyMeters,
+  speedMetersPerSecond: location.speedMetersPerSecond,
+  courseDegrees: location.courseDegrees,
+  capturedAt: location.capturedAt,
+  updatedAt: location.updatedAt
+});
+
 export async function createApp(config: AppConfig) {
   const app = Fastify({ logger: true, bodyLimit: 15 * 1024 * 1024 });
   const store = new DataStore(
@@ -104,6 +122,7 @@ export async function createApp(config: AppConfig) {
   const verifyAppleIdentity = config.appleIdentityVerifier
     ?? createAppleIdentityVerifier(config.appleBundleId);
   const notificationSenders = config.notificationSenders ?? [];
+  const liveLocations = new LiveLocationStore();
   await store.initialize();
   app.log.info({ storage: store.storageBackend }, "Data store initialized");
   app.addHook("onClose", async () => {
@@ -436,6 +455,7 @@ export async function createApp(config: AppConfig) {
       currentUser.id,
       params.userId
     );
+    liveLocations.remove(params.groupId, params.userId);
     return { group: publicGroup(store, group, currentUser.id) };
   });
 
@@ -443,6 +463,67 @@ export async function createApp(config: AppConfig) {
     const currentUser = authenticatedUser(request);
     const params = groupParamsSchema.parse(request.params);
     await store.deleteGroup(params.groupId, currentUser.id);
+    liveLocations.removeGroup(params.groupId);
+    return reply.status(204).send();
+  });
+
+  const liveLocationBodySchema = z.object({
+    latitude: z.number().min(-90).max(90),
+    longitude: z.number().min(-180).max(180),
+    horizontalAccuracyMeters: z.number().min(0).max(1_000).optional(),
+    speedMetersPerSecond: z.number().min(0).max(100).optional(),
+    courseDegrees: z.number().min(0).max(360).optional(),
+    capturedAt: z.string().datetime()
+  });
+
+  const requireGroupMembership = (groupId: string, userId: string) => {
+    const group = store.groupById(groupId);
+    if (!group) {
+      throw new StoreError("group_not_found", 404, "Group not found");
+    }
+    if (!group.memberIds.includes(userId)) {
+      throw new StoreError(
+        "group_membership_required",
+        403,
+        "Group membership required"
+      );
+    }
+    return group;
+  };
+
+  app.get("/v1/groups/:groupId/live-locations", {
+    config: { rateLimit: { max: 60, timeWindow: "1 minute" } }
+  }, async (request) => {
+    const currentUser = authenticatedUser(request);
+    const params = groupParamsSchema.parse(request.params);
+    requireGroupMembership(params.groupId, currentUser.id);
+    return {
+      locations: liveLocations.list(params.groupId)
+        .filter((location) => store.userById(location.userId))
+        .map((location) => publicLiveLocation(store, location))
+    };
+  });
+
+  app.put("/v1/groups/:groupId/live-location", {
+    config: { rateLimit: { max: 30, timeWindow: "1 minute" } }
+  }, async (request) => {
+    const currentUser = authenticatedUser(request);
+    const params = groupParamsSchema.parse(request.params);
+    const body = liveLocationBodySchema.parse(request.body);
+    requireGroupMembership(params.groupId, currentUser.id);
+    const location = liveLocations.upsert(
+      params.groupId,
+      currentUser.id,
+      body
+    );
+    return { location: publicLiveLocation(store, location) };
+  });
+
+  app.delete("/v1/groups/:groupId/live-location", async (request, reply) => {
+    const currentUser = authenticatedUser(request);
+    const params = groupParamsSchema.parse(request.params);
+    requireGroupMembership(params.groupId, currentUser.id);
+    liveLocations.remove(params.groupId, currentUser.id);
     return reply.status(204).send();
   });
 
