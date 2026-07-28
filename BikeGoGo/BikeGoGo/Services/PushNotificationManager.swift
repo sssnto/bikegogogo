@@ -6,6 +6,11 @@ private struct PushTokenBody: Encodable {
     let environment: String
 }
 
+enum VoicePushEvent: Equatable {
+    case invitation
+    case cancelled(invitationID: String)
+}
+
 @MainActor
 final class PushNotificationManager {
     static let shared = PushNotificationManager()
@@ -14,6 +19,8 @@ final class PushNotificationManager {
     private let defaults: UserDefaults
     private var accessToken: String?
     private var deviceToken: String?
+    private var pendingVoiceEvents: [VoicePushEvent] = []
+    var onVoiceEvent: ((VoicePushEvent) -> Void)?
     private static let deviceTokenKey = "bikegogo.pushDeviceToken"
 
     private var environment: String {
@@ -82,6 +89,38 @@ final class PushNotificationManager {
         if self.accessToken == accessToken {
             self.accessToken = nil
         }
+    }
+
+    @discardableResult
+    func handleNotification(userInfo: [AnyHashable: Any]) -> Bool {
+        guard let event = userInfo["event"] as? String else { return false }
+        let voiceEvent: VoicePushEvent
+        switch event {
+        case "voice_invitation":
+            voiceEvent = .invitation
+        case "voice_cancelled":
+            guard let invitationID = (userInfo["invitationId"] ?? userInfo["entityId"])
+                as? String else {
+                return false
+            }
+            voiceEvent = .cancelled(invitationID: invitationID)
+        default:
+            return false
+        }
+
+        if let onVoiceEvent {
+            onVoiceEvent(voiceEvent)
+        } else {
+            pendingVoiceEvents.append(voiceEvent)
+        }
+        return true
+    }
+
+    func deliverPendingVoiceEvents() {
+        guard let onVoiceEvent else { return }
+        let events = pendingVoiceEvents
+        pendingVoiceEvents.removeAll()
+        events.forEach(onVoiceEvent)
     }
 
     private func registerCurrentToken() async {
@@ -153,6 +192,20 @@ final class BikeGoGoAppDelegate: NSObject, UIApplicationDelegate,
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification
     ) async -> UNNotificationPresentationOptions {
-        [.banner, .list, .sound]
+        if PushNotificationManager.shared.handleNotification(
+            userInfo: notification.request.content.userInfo
+        ) {
+            return [.sound]
+        }
+        return [.banner, .list, .sound]
+    }
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse
+    ) async {
+        PushNotificationManager.shared.handleNotification(
+            userInfo: response.notification.request.content.userInfo
+        )
     }
 }

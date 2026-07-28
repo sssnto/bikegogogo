@@ -84,7 +84,7 @@ private struct AccountView: View {
                 await account.refresh()
             }
             .task {
-                await account.refresh()
+                await account.refresh(presentsErrors: false)
             }
             .overlay {
                 if account.isWorking, account.currentUser != nil {

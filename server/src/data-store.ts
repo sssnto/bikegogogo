@@ -93,8 +93,21 @@ export type PushTokenRecord = {
   updatedAt: string;
 };
 
+export type VoiceInvitationRecord = {
+  id: string;
+  callerId: string;
+  targetId: string;
+  targetKind: "friend" | "group";
+  targetName: string;
+  recipientIds: string[];
+  respondedRecipientIds: string[];
+  createdAt: string;
+  expiresAt: string;
+  cancelledAt?: string;
+};
+
 type DatabaseState = {
-  version: 4;
+  version: 5;
   users: UserRecord[];
   sessions: SessionRecord[];
   friendRequests: FriendRequestRecord[];
@@ -102,17 +115,19 @@ type DatabaseState = {
   groups: GroupRecord[];
   rides: RideRecord[];
   pushTokens: PushTokenRecord[];
+  voiceInvitations: VoiceInvitationRecord[];
 };
 
 const emptyState = (): DatabaseState => ({
-  version: 4,
+  version: 5,
   users: [],
   sessions: [],
   friendRequests: [],
   friendships: [],
   groups: [],
   rides: [],
-  pushTokens: []
+  pushTokens: [],
+  voiceInvitations: []
 });
 
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
@@ -572,6 +587,139 @@ export class DataStore {
     });
   }
 
+  async createVoiceInvitation(
+    callerId: string,
+    targetId: string
+  ): Promise<VoiceInvitationRecord> {
+    return this.mutate(async () => {
+      const caller = this.requireUser(callerId);
+      let targetKind: VoiceInvitationRecord["targetKind"];
+      let targetName: string;
+      let recipientIds: string[];
+
+      if (targetId.startsWith("grp_")) {
+        const group = this.requireGroup(targetId);
+        if (!group.memberIds.includes(callerId)) {
+          throw new StoreError(
+            "group_membership_required",
+            403,
+            "Group membership required"
+          );
+        }
+        targetKind = "group";
+        targetName = group.name;
+        recipientIds = group.memberIds.filter((memberId) => memberId !== callerId);
+      } else {
+        const peer = this.requireUser(targetId);
+        if (!this.areFriends(callerId, peer.id)) {
+          throw new StoreError(
+            "voice_room_forbidden",
+            403,
+            "Both users must accept the friendship before calling"
+          );
+        }
+        targetKind = "friend";
+        targetName = peer.displayName;
+        recipientIds = [peer.id];
+      }
+
+      if (recipientIds.length === 0) {
+        throw new StoreError(
+          "voice_invitation_has_no_recipients",
+          409,
+          "Voice invitation has no recipients"
+        );
+      }
+
+      const now = new Date();
+      for (const invitation of this.state.voiceInvitations) {
+        if (
+          invitation.callerId === caller.id
+          && invitation.targetId === targetId
+          && !invitation.cancelledAt
+          && new Date(invitation.expiresAt).getTime() > now.getTime()
+        ) {
+          invitation.cancelledAt = now.toISOString();
+        }
+      }
+
+      const invitation: VoiceInvitationRecord = {
+        id: `vin_${randomUUID()}`,
+        callerId: caller.id,
+        targetId,
+        targetKind,
+        targetName,
+        recipientIds,
+        respondedRecipientIds: [],
+        createdAt: now.toISOString(),
+        expiresAt: new Date(now.getTime() + 90_000).toISOString()
+      };
+      this.state.voiceInvitations.push(invitation);
+      this.pruneVoiceInvitations(now);
+      return invitation;
+    });
+  }
+
+  pendingVoiceInvitations(userId: string): VoiceInvitationRecord[] {
+    const now = Date.now();
+    return this.state.voiceInvitations
+      .filter((invitation) =>
+        !invitation.cancelledAt
+        && new Date(invitation.expiresAt).getTime() > now
+        && invitation.recipientIds.includes(userId)
+        && !invitation.respondedRecipientIds.includes(userId)
+      )
+      .sort((first, second) => second.createdAt.localeCompare(first.createdAt));
+  }
+
+  async respondToVoiceInvitation(
+    invitationId: string,
+    userId: string
+  ): Promise<VoiceInvitationRecord> {
+    return this.mutate(async () => {
+      const invitation = this.requireVoiceInvitation(invitationId);
+      if (!invitation.recipientIds.includes(userId)) {
+        throw new StoreError(
+          "voice_invitation_forbidden",
+          403,
+          "Voice invitation does not belong to this user"
+        );
+      }
+      if (
+        invitation.cancelledAt
+        || new Date(invitation.expiresAt).getTime() <= Date.now()
+      ) {
+        throw new StoreError(
+          "voice_invitation_expired",
+          410,
+          "Voice invitation has expired"
+        );
+      }
+      if (!invitation.respondedRecipientIds.includes(userId)) {
+        invitation.respondedRecipientIds.push(userId);
+      }
+      return invitation;
+    });
+  }
+
+  async cancelVoiceInvitation(
+    invitationId: string,
+    callerId: string
+  ): Promise<VoiceInvitationRecord> {
+    return this.mutate(async () => {
+      const invitation = this.requireVoiceInvitation(invitationId);
+      if (invitation.callerId !== callerId) {
+        throw new StoreError(
+          "voice_invitation_caller_required",
+          403,
+          "Only the caller can cancel this invitation"
+        );
+      }
+      invitation.cancelledAt ??= new Date().toISOString();
+      return invitation;
+    });
+  }
+
   async upsertRide(
     userId: string,
     ride: Omit<RideRecord, "userId" | "createdAt" | "updatedAt">
@@ -724,6 +872,16 @@ export class DataStore {
             && candidate.environment === record.environment
         ) === index
       );
+    this.state.voiceInvitations = this.state.voiceInvitations.map((invitation) => ({
+      ...invitation,
+      callerId: invitation.callerId === source.id ? target.id : invitation.callerId,
+      recipientIds: Array.from(new Set(invitation.recipientIds.map(
+        (userId) => userId === source.id ? target.id : userId
+      ))),
+      respondedRecipientIds: Array.from(new Set(invitation.respondedRecipientIds.map(
+        (userId) => userId === source.id ? target.id : userId
+      )))
+    }));
     this.state.users = this.state.users.filter((user) => user.id !== source.id);
     return target;
   }
@@ -737,10 +895,11 @@ export class DataStore {
       groups?: GroupRecord[];
       rides?: RideRecord[];
       pushTokens?: PushTokenRecord[];
+      voiceInvitations?: VoiceInvitationRecord[];
     };
     const now = Date.now();
     return {
-      version: 4,
+      version: 5,
       users: (legacy.users ?? []).map((user) => {
         const { deviceIdHash, ...currentUser } = user;
         return {
@@ -758,8 +917,31 @@ export class DataStore {
       friendships: legacy.friendships ?? [],
       groups: legacy.groups ?? [],
       rides: legacy.rides ?? [],
-      pushTokens: legacy.pushTokens ?? []
+      pushTokens: legacy.pushTokens ?? [],
+      voiceInvitations: legacy.voiceInvitations ?? []
     };
+  }
+
+  private requireVoiceInvitation(invitationId: string): VoiceInvitationRecord {
+    const invitation = this.state.voiceInvitations.find(
+      (candidate) => candidate.id === invitationId
+    );
+    if (!invitation) {
+      throw new StoreError(
+        "voice_invitation_not_found",
+        404,
+        "Voice invitation not found"
+      );
+    }
+    return invitation;
+  }
+
+  private pruneVoiceInvitations(now = new Date()): void {
+    const oldestRetained = now.getTime() - 24 * 60 * 60 * 1000;
+    this.state.voiceInvitations = this.state.voiceInvitations.filter(
+      (invitation) =>
+        new Date(invitation.expiresAt).getTime() >= oldestRetained
+    );
   }
 
   private generateFriendCode(): string {

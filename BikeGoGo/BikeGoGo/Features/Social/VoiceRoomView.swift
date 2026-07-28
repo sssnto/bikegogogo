@@ -57,12 +57,12 @@ struct VoiceRoomView: View {
                             if appState.voiceClient.isConnected {
                                 await appState.leaveVoiceRoom()
                             } else if let selectedTargetID {
-                                await appState.joinVoiceRoom(roomID: selectedTargetID)
+                                await appState.startVoiceCall(targetID: selectedTargetID)
                             }
                         }
                     } label: {
                         Label(
-                            appState.voiceClient.isConnected ? "退出语音" : "加入语音",
+                            appState.voiceClient.isConnected ? "结束语音" : "发起语音",
                             systemImage: appState.voiceClient.isConnected
                                 ? "phone.down.fill"
                                 : "phone.fill"
@@ -71,8 +71,20 @@ struct VoiceRoomView: View {
                     .disabled(
                         appState.voiceClient.status == .connecting
                             || appState.voiceClient.status == .reconnecting
+                            || appState.isHandlingVoiceInvitation
                             || (!appState.voiceClient.isConnected && selectedTargetID == nil)
                     )
+
+                    if appState.outgoingVoiceInvitation != nil,
+                       appState.voiceClient.participants.filter({ !$0.isLocal }).isEmpty {
+                        Label("邀请已发送，正在等待对方接听", systemImage: "phone.arrow.up.right")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if appState.voiceClient.isConnected {
+                        LabeledContent("音频输出", value: appState.voiceClient.audioRouteName)
+                    }
 
                     Button {
                         Task { await appState.toggleMute() }
@@ -106,6 +118,14 @@ struct VoiceRoomView: View {
                                 Text(participant.connectionQuality)
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
+                                Text(participant.audioStatus)
+                                    .font(.caption)
+                                    .foregroundStyle(
+                                        participant.audioStatus.contains("已发送")
+                                            || participant.audioStatus.contains("已接收")
+                                            ? .green
+                                            : .orange
+                                    )
                             }
                             Spacer()
                         }
@@ -171,6 +191,19 @@ struct VoiceRoomView: View {
             } message: {
                 Text(appState.voiceClient.errorMessage ?? "")
             }
+            .alert(
+                "语音呼叫",
+                isPresented: Binding(
+                    get: { appState.voiceCallMessage != nil },
+                    set: { if !$0 { appState.voiceCallMessage = nil } }
+                )
+            ) {
+                Button("知道了") {
+                    appState.voiceCallMessage = nil
+                }
+            } message: {
+                Text(appState.voiceCallMessage ?? "")
+            }
         }
     }
 
@@ -184,7 +217,7 @@ struct VoiceRoomView: View {
                     Text(group.name).tag(Optional(group.id))
                 }
             }
-            .disabled(appState.voiceClient.isConnected)
+            .disabled(appState.voiceClient.isConnected || appState.isHandlingVoiceInvitation)
 
         case .friend:
             Picker("选择好友", selection: $selectedFriendID) {
@@ -193,7 +226,7 @@ struct VoiceRoomView: View {
                     Text(friend.displayName).tag(Optional(friend.id))
                 }
             }
-            .disabled(appState.voiceClient.isConnected)
+            .disabled(appState.voiceClient.isConnected || appState.isHandlingVoiceInvitation)
         }
     }
 

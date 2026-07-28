@@ -74,7 +74,10 @@ final class AccountClient: ObservableObject {
         accessToken = KeychainStore.string(for: Self.accessTokenKey)
     }
 
-    func bootstrap(defaultDisplayName: String) async {
+    func bootstrap(
+        defaultDisplayName: String,
+        presentsErrors: Bool = true
+    ) async {
         guard !isWorking else { return }
         errorMessage = nil
         isWorking = true
@@ -82,12 +85,16 @@ final class AccountClient: ObservableObject {
 
         if accessToken != nil {
             do {
-                try await loadSocialData()
+                try await retryingTransientFailures {
+                    try await self.loadSocialData()
+                }
                 requiresAppleSignIn = false
                 return
             } catch {
                 guard isInvalidSession(error) else {
-                    errorMessage = accountMessage(for: error)
+                    if presentsErrors {
+                        errorMessage = accountMessage(for: error)
+                    }
                     return
                 }
                 clearSession()
@@ -98,18 +105,22 @@ final class AccountClient: ObservableObject {
             let body = try JSONEncoder().encode(
                 GuestLoginBody(deviceId: deviceID, displayName: defaultDisplayName)
             )
-            let response: GuestLoginResponse = try await request(
-                path: ["v1", "auth", "guest"],
-                method: "POST",
-                body: body,
-                authorization: .none
-            )
+            let response: GuestLoginResponse = try await retryingTransientFailures {
+                try await self.request(
+                    path: ["v1", "auth", "guest"],
+                    method: "POST",
+                    body: body,
+                    authorization: .none
+                )
+            }
             saveSession(response)
-            try await loadSocialData()
+            try await retryingTransientFailures {
+                try await self.loadSocialData()
+            }
         } catch {
             if isServerError(error, code: "apple_sign_in_required") {
                 requiresAppleSignIn = true
-            } else {
+            } else if presentsErrors {
                 errorMessage = accountMessage(for: error)
             }
         }
@@ -172,20 +183,22 @@ final class AccountClient: ObservableObject {
         requiresAppleSignIn = wasAppleAccount
     }
 
-    func refresh() async {
+    func refresh(presentsErrors: Bool = true) async {
         guard accessToken != nil, !isWorking else { return }
         errorMessage = nil
         isWorking = true
         defer { isWorking = false }
 
         do {
-            try await loadSocialData()
+            try await retryingTransientFailures {
+                try await self.loadSocialData()
+            }
         } catch {
             if isInvalidSession(error) {
                 let requiresSignIn = currentUser?.isAppleAccount == true
                 clearSession()
                 requiresAppleSignIn = requiresSignIn
-            } else {
+            } else if presentsErrors {
                 errorMessage = accountMessage(for: error)
             }
         }
@@ -443,6 +456,48 @@ final class AccountClient: ObservableObject {
     private func isServerError(_ error: Error, code expectedCode: String) -> Bool {
         guard case let AccountError.server(code, _) = error else { return false }
         return code == expectedCode
+    }
+
+    private func retryingTransientFailures<T>(
+        attempts: Int = 3,
+        operation: () async throws -> T
+    ) async throws -> T {
+        var delayNanoseconds: UInt64 = 300_000_000
+
+        for attempt in 1...attempts {
+            do {
+                return try await operation()
+            } catch {
+                guard attempt < attempts, isTransient(error) else {
+                    throw error
+                }
+                try await Task.sleep(nanoseconds: delayNanoseconds)
+                delayNanoseconds *= 2
+            }
+        }
+
+        preconditionFailure("Retry loop ended without returning or throwing")
+    }
+
+    private func isTransient(_ error: Error) -> Bool {
+        if let urlError = error as? URLError {
+            switch urlError.code {
+            case .timedOut,
+                 .cannotFindHost,
+                 .cannotConnectToHost,
+                 .networkConnectionLost,
+                 .dnsLookupFailed,
+                 .notConnectedToInternet:
+                return true
+            default:
+                return false
+            }
+        }
+
+        if case let AccountError.server(_, statusCode) = error {
+            return statusCode == 408 || statusCode == 429 || statusCode >= 500
+        }
+        return false
     }
 
     private func accountMessage(for error: Error) -> String {

@@ -36,6 +36,17 @@ struct RideTrackingView: View {
                 }
                 .frame(maxWidth: .infinity)
                 .frame(height: 320)
+                .overlay(alignment: .topLeading) {
+                    if let locationStatus {
+                        Label(locationStatus.text, systemImage: locationStatus.icon)
+                            .font(.caption)
+                            .foregroundStyle(locationStatus.color)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 8)
+                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+                            .padding(12)
+                    }
+                }
                 .onChange(of: coordinates.count) {
                     guard let latest = coordinates.last else { return }
                     camera = .region(
@@ -115,6 +126,35 @@ struct RideTrackingView: View {
                 fallback: .region(defaultRideMapRegion)
             )
         }
+    }
+
+    private var locationStatus: (text: String, icon: String, color: Color)? {
+        guard appState.currentRide.state == .recording else { return nil }
+
+        if appState.isWaitingForAccurateLocation {
+            if let accuracy = appState.locationAccuracyMeters {
+                return (
+                    "GPS 信号弱 ±\(Int(accuracy.rounded())) m",
+                    "location.slash.fill",
+                    .orange
+                )
+            }
+            return ("正在获取准确定位", "location.magnifyingglass", .orange)
+        }
+
+        guard let accuracy = appState.locationAccuracyMeters else { return nil }
+        if accuracy > RideLocationFilter.maximumTrackingHorizontalAccuracyMeters {
+            return (
+                "GPS 信号弱 ±\(Int(accuracy.rounded())) m",
+                "location.slash.fill",
+                .orange
+            )
+        }
+        return (
+            "定位精度 ±\(Int(accuracy.rounded())) m",
+            "location.fill",
+            .green
+        )
     }
 
     private var metricsPanel: some View {

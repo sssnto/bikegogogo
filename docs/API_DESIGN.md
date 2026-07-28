@@ -155,12 +155,35 @@ Authorization: Bearer <accessToken>
 ```
 
 `sandbox` 用于 Xcode Debug 真机，`production` 用于 TestFlight/App Store。Token 只能绑定
-一个 BikeGoGo 账号；重新绑定会自动转移归属。好友申请、申请通过和小队邀请会触发
-普通 APNs alert。推送失败不会回滚业务操作，APNs 确认失效的 Token 会自动删除。
+一个 BikeGoGo 账号；重新绑定会自动转移归属。好友申请、申请通过、小队邀请和语音
+呼叫会触发普通 APNs alert。推送失败不会回滚业务操作，APNs 确认失效的 Token 会
+自动删除。
 
 ## 语音
 
-客户端通过后端换取 LiveKit token：
+发起好友或小队语音前先创建一条 90 秒有效的邀请：
+
+```http
+POST /v1/voice/invitations
+Authorization: Bearer <accessToken>
+Content-Type: application/json
+
+{"targetId":"usr_... 或 grp_..."}
+```
+
+后端向好友或小队内除发起人外的所有成员发送 `voice_invitation` 推送。接收方可查询并
+处理待接听邀请，发起方结束呼叫时可取消邀请：
+
+```http
+GET    /v1/voice/invitations
+POST   /v1/voice/invitations/{invitationId}/respond
+DELETE /v1/voice/invitations/{invitationId}
+```
+
+`respond` 请求体为 `{"action":"accept"}` 或 `{"action":"decline"}`。取消后接收方会收到
+`voice_cancelled` 推送。邀请只负责呼叫状态，真正的实时音频仍通过 LiveKit 传输。
+
+双方进入通话时，客户端通过后端换取 LiveKit token：
 
 ```http
 POST /v1/voice/rooms/{friendUserId 或 groupId}/token

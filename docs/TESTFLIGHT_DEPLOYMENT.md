@@ -4,7 +4,7 @@
 
 ```text
 版本：1.0
-构建号：2
+构建号：4
 iOS Bundle ID：com.sssnto.BikeGoGo
 Watch Bundle ID：com.sssnto.BikeGoGo.watchkitapp
 Apple Team ID：FR9RTRV9BC
@@ -162,6 +162,8 @@ xcodebuild -exportArchive \
 - capability 不在 profile：在 Developer Portal 为对应 Bundle ID 开启 capability，
   回 Xcode 切换一次 Team 以刷新 profile。
 - 构建号已使用：递增 `CURRENT_PROJECT_VERSION` 后重新 Archive。
+- `ITMS-90683`：按邮件指出的权限类型补充主 App `Info.plist` 的用途说明，
+  递增构建号并创建新的 Archive 后上传。
 - Watch 校验失败：检查 Watch Bundle ID、companion Bundle ID 和两个 target 的版本号。
 
 ## 6. 启用测试
@@ -180,8 +182,16 @@ xcodebuild -exportArchive \
 2. 完成出口合规问答和 Beta App Review 信息。
 3. 提交 Beta App Review；通过后用邮箱或公开链接邀请好友。
 
-对于加密问答，请按当次构建实际使用的 HTTPS、LiveKit/WebRTC 和 Apple SDK 情况如实
-回答。不要在未核实出口合规分类时凭模板选择答案。
+当前 BikeGoGo 使用 HTTPS、Sign in with Apple、APNs 和 LiveKit/WebRTC 的标准安全
+通信，没有自研或非标准加密算法。由于 LiveKit/WebRTC 包含 Apple 操作系统以外的
+标准加密实现，应在加密算法类型中选择“代替 Apple 操作系统加密或与之同时使用的
+标准加密算法”。是否需要法国加密声明取决于 App 是否在法国商店分发，应以 App
+Store Connect 后续问答的结果为准。
+
+只有问答最终确认不需要出口合规文档时，才能在主 App 与 Watch App 的 `Info.plist`
+中设置 `ITSAppUsesNonExemptEncryption` 为 `NO`。如果 App Store Connect 要求上传
+文档，则应等待文档获批后使用 Apple 提供的合规代码。若后续增加自研加密算法、文件
+加密、端到端加密或其他密码学功能，必须重新判断出口合规分类。
 
 ## 7. 一台 iPhone 的首轮验收
 
@@ -217,8 +227,12 @@ Watch App 会随 iPhone 构建一起分发。若没有自动安装，在 iPhone 
 
 1. 两个不同账号互加好友并通过申请，验证双方 Production 推送。
 2. 建立小队并邀请另一方，验证小队邀请推送。
-3. 两边加入同一小队语音，测试静音、锁屏、后台和 Wi-Fi/蜂窝切换。
-4. 同一 Apple 账号在另一设备登录，验证云端骑行历史恢复。
-5. 同时编辑或删除骑行记录，观察同步冲突和错误提示。
+3. A 向 B 发起好友语音，验证 B 在前台显示接听页、后台或锁屏收到带声音的通知。
+4. B 接听后，两端确认本机显示“麦克风已发送”、对方显示“语音已接收”，然后轮流
+   说话和静音，验证双向音频。
+5. 发起小队语音并验证所有其他成员均收到邀请；测试拒绝、取消和 90 秒自动过期。
+6. 通话中测试锁屏、后台和 Wi-Fi/蜂窝切换。
+7. 同一 Apple 账号在另一设备登录，验证云端骑行历史恢复。
+8. 同时编辑或删除骑行记录，观察同步冲突和错误提示。
 
 通过这一轮后，阶段 5 的“小规模 TestFlight 内测”才算完整验收。

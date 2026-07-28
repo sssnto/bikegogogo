@@ -16,11 +16,17 @@ final class AppState: ObservableObject {
     @Published var voiceRoom = SampleData.voiceRoom
     @Published private(set) var locationAuthorizationStatus: CLAuthorizationStatus = .notDetermined
     @Published private(set) var currentSpeedMetersPerSecond = 0.0
+    @Published private(set) var locationAccuracyMeters: Double?
+    @Published private(set) var isWaitingForAccurateLocation = false
     @Published private(set) var watchHeartRate = 0.0
     @Published var rideAlertMessage: String?
     @Published private(set) var isSyncingRides = false
     @Published private(set) var rideSyncMessage: String?
     @Published private(set) var lastRideSyncAt: Date?
+    @Published private(set) var incomingVoiceInvitation: VoiceInvitation?
+    @Published private(set) var outgoingVoiceInvitation: VoiceInvitation?
+    @Published private(set) var isHandlingVoiceInvitation = false
+    @Published var voiceCallMessage: String?
 
     private let rideStore = LocalRideStore()
     private let rideCloudClient = RideCloudClient()
@@ -29,6 +35,7 @@ final class AppState: ObservableObject {
     let accountClient = AccountClient()
     let watchBridge = WatchSessionBridge()
     private let watchWorkoutLauncher = WatchWorkoutLauncher()
+    private let voiceTokenService = VoiceTokenService()
     private let localUserID: String
     private let localDisplayName: String
     private var cancellables: Set<AnyCancellable> = []
@@ -36,6 +43,7 @@ final class AppState: ObservableObject {
     private var activeElapsedSeconds: TimeInterval = 0
     private var activeSegmentStartedAt: Date?
     private var recorderNeedsRestart = false
+    private var activeVoiceInvitationID: String?
 
     init() {
         let identityKey = "bikegogo.localVoiceIdentity"
@@ -82,6 +90,14 @@ final class AppState: ObservableObject {
             .receive(on: RunLoop.main)
             .assign(to: &$currentSpeedMetersPerSecond)
 
+        rideRecorder.$locationAccuracyMeters
+            .receive(on: RunLoop.main)
+            .assign(to: &$locationAccuracyMeters)
+
+        rideRecorder.$isWaitingForAccurateLocation
+            .receive(on: RunLoop.main)
+            .assign(to: &$isWaitingForAccurateLocation)
+
         rideRecorder.$lastErrorMessage
             .compactMap { $0 }
             .receive(on: RunLoop.main)
@@ -103,6 +119,14 @@ final class AppState: ObservableObject {
                 self?.objectWillChange.send()
             }
             .store(in: &cancellables)
+
+        PushNotificationManager.shared.onVoiceEvent = { [weak self] event in
+            guard let self else { return }
+            Task { @MainActor in
+                await self.handleVoicePushEvent(event)
+            }
+        }
+        PushNotificationManager.shared.deliverPendingVoiceEvents()
     }
 
     func bootstrap() async {
@@ -134,8 +158,12 @@ final class AppState: ObservableObject {
             )
         }
 
-        await accountClient.bootstrap(defaultDisplayName: localDisplayName)
+        await accountClient.bootstrap(
+            defaultDisplayName: localDisplayName,
+            presentsErrors: false
+        )
         await PushNotificationManager.shared.requestAuthorization()
+        await refreshIncomingVoiceInvitations()
         await loadStoredRides()
         await syncRides()
         watchBridge.activate()
@@ -270,8 +298,95 @@ final class AppState: ObservableObject {
         voiceRoom.isJoined = voiceClient.isConnected
     }
 
+    func startVoiceCall(targetID: String) async {
+        guard let accessToken = accountClient.accessToken else {
+            voiceCallMessage = "请先建立 BikeGoGo 账户。"
+            return
+        }
+        guard !isHandlingVoiceInvitation, !voiceClient.isConnected else { return }
+        isHandlingVoiceInvitation = true
+        voiceCallMessage = nil
+        defer { isHandlingVoiceInvitation = false }
+
+        do {
+            outgoingVoiceInvitation = try await voiceTokenService.createInvitation(
+                targetID: targetID,
+                accessToken: accessToken
+            )
+            await joinVoiceRoom(roomID: targetID)
+            if !voiceClient.isConnected {
+                await cancelOutgoingVoiceInvitation()
+            }
+        } catch {
+            voiceCallMessage = "发起语音失败：\(error.localizedDescription)"
+        }
+    }
+
+    func refreshIncomingVoiceInvitations() async {
+        guard let accessToken = accountClient.accessToken,
+              !voiceClient.isConnected else { return }
+        do {
+            incomingVoiceInvitation = try await voiceTokenService
+                .pendingInvitations(accessToken: accessToken)
+                .first
+        } catch {
+            print("Refreshing voice invitations failed: \(error.localizedDescription)")
+        }
+    }
+
+    func acceptIncomingVoiceInvitation() async {
+        guard let invitation = incomingVoiceInvitation,
+              let accessToken = accountClient.accessToken,
+              !isHandlingVoiceInvitation else { return }
+        isHandlingVoiceInvitation = true
+        voiceCallMessage = nil
+        defer { isHandlingVoiceInvitation = false }
+
+        do {
+            _ = try await voiceTokenService.respond(
+                invitationID: invitation.id,
+                action: "accept",
+                accessToken: accessToken
+            )
+            incomingVoiceInvitation = nil
+            activeVoiceInvitationID = invitation.id
+            await joinVoiceRoom(roomID: invitation.targetId)
+            if !voiceClient.isConnected {
+                activeVoiceInvitationID = nil
+            }
+        } catch {
+            voiceCallMessage = "接听失败：\(error.localizedDescription)"
+            await refreshIncomingVoiceInvitations()
+        }
+    }
+
+    func declineIncomingVoiceInvitation() async {
+        guard let invitation = incomingVoiceInvitation,
+              let accessToken = accountClient.accessToken,
+              !isHandlingVoiceInvitation else { return }
+        isHandlingVoiceInvitation = true
+        defer { isHandlingVoiceInvitation = false }
+        do {
+            _ = try await voiceTokenService.respond(
+                invitationID: invitation.id,
+                action: "decline",
+                accessToken: accessToken
+            )
+        } catch {
+            print("Declining voice invitation failed: \(error.localizedDescription)")
+        }
+        incomingVoiceInvitation = nil
+    }
+
+    func dismissIncomingVoiceInvitationIfExpired(_ invitationID: String) {
+        guard incomingVoiceInvitation?.id == invitationID else { return }
+        incomingVoiceInvitation = nil
+    }
+
     func leaveVoiceRoom() async {
+        await cancelOutgoingVoiceInvitation()
         await voiceClient.leave()
+        activeVoiceInvitationID = nil
         voiceRoom.isJoined = false
     }
 
@@ -279,6 +394,33 @@ final class AppState: ObservableObject {
         await voiceClient.setMuted(!voiceClient.isMuted)
         voiceRoom.isMuted = voiceClient.isMuted
         watchBridge.sendMuteState(voiceClient.isMuted)
+    }
+
+    private func cancelOutgoingVoiceInvitation() async {
+        guard let invitation = outgoingVoiceInvitation,
+              let accessToken = accountClient.accessToken else { return }
+        outgoingVoiceInvitation = nil
+        try? await voiceTokenService.cancelInvitation(
+            invitationID: invitation.id,
+            accessToken: accessToken
+        )
+    }
+
+    private func handleVoicePushEvent(_ event: VoicePushEvent) async {
+        switch event {
+        case .invitation:
+            await refreshIncomingVoiceInvitations()
+        case let .cancelled(invitationID):
+            if incomingVoiceInvitation?.id == invitationID {
+                incomingVoiceInvitation = nil
+            }
+            if activeVoiceInvitationID == invitationID {
+                activeVoiceInvitationID = nil
+                await voiceClient.leave()
+                voiceRoom.isJoined = false
+                voiceCallMessage = "发起方已结束本次语音。"
+            }
+        }
     }
 
     func syncRides() async {

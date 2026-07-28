@@ -13,8 +13,14 @@ export type APNsEnvironment = "sandbox" | "production";
 export type PushNotification = {
   title: string;
   body: string;
-  event: "friend_request" | "friend_accepted" | "group_invitation";
+  event:
+    | "friend_request"
+    | "friend_accepted"
+    | "group_invitation"
+    | "voice_invitation"
+    | "voice_cancelled";
   entityId?: string;
+  data?: Record<string, string>;
 };
 
 export type PushSendResult = {
@@ -139,7 +145,8 @@ class APNsSender implements NotificationSender {
         "thread-id": notification.event
       },
       event: notification.event,
-      entityId: notification.entityId
+      entityId: notification.entityId,
+      ...notification.data
     });
 
     return new Promise((resolve, reject) => {

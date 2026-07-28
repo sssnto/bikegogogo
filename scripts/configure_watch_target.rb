@@ -54,7 +54,7 @@ watch_target.build_configurations.each do |configuration|
     project.path.dirname
   ).to_s
   settings["CODE_SIGN_STYLE"] = "Automatic"
-  settings["CURRENT_PROJECT_VERSION"] = "1"
+  settings["CURRENT_PROJECT_VERSION"] = "3"
   settings["DEVELOPMENT_TEAM"] = "FR9RTRV9BC"
   settings["ENABLE_PREVIEWS"] = "YES"
   settings["GENERATE_INFOPLIST_FILE"] = "NO"

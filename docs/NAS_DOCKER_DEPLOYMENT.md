@@ -377,6 +377,11 @@ DELETE /v1/groups/{groupId}/members/{userId}
 DELETE /v1/groups/{groupId}
 PUT   /v1/devices/push-token
 DELETE /v1/devices/push-token
+GET   /v1/voice/invitations
+POST  /v1/voice/invitations
+POST  /v1/voice/invitations/{invitationId}/respond
+DELETE /v1/voice/invitations/{invitationId}
+POST  /v1/voice/rooms/{friendUserId 或 groupId}/token
 GET   /v1/rides
 GET   /v1/rides/{rideId}
 PUT   /v1/rides/{rideId}
@@ -387,6 +392,11 @@ DELETE /v1/rides/{rideId}
 `Authorization: Bearer <accessToken>`。完整请求示例见 `docs/API_DESIGN.md`。
 
 ### 获取 LiveKit 语音房间 Token
+
+客户端会先通过 `/v1/voice/invitations` 创建好友或小队邀请。后端使用现有 APNs
+production/sandbox 配置发送来电提醒，不需要新增容器或公网端口。邀请有效期为 90 秒；
+接听或拒绝使用 `POST /v1/voice/invitations/{invitationId}/respond`，发起方结束时使用
+`DELETE /v1/voice/invitations/{invitationId}`。
 
 ```http
 POST /v1/voice/rooms/{friendUserId 或 groupId}/token

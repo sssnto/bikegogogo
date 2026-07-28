@@ -31,6 +31,8 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSCameraUsageDescription</key>
+	<string>BikeGoGo 需要相机用于骑行小队实时通信中的视频交流；未开启相关功能时不会拍摄或保存内容。</string>
 	<key>NSHealthShareUsageDescription</key>
 	<string>BikeGoGo 需要读取心率和运动数据来展示骑行统计。</string>
 	<key>NSHealthUpdateUsageDescription</key>

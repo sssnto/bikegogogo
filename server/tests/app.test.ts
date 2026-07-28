@@ -444,6 +444,153 @@ test("voice token endpoint requires an authenticated account", async () => {
   }
 });
 
+test("voice invitations notify friends and support pending, accept, and cancel", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "bikegogogo-test-"));
+  const dataFile = path.join(directory, "data.json");
+  const deliveries: Array<{
+    tokens: string[];
+    notification: PushNotification;
+  }> = [];
+  const sender: NotificationSender = {
+    environment: "sandbox",
+    async send(tokens, notification) {
+      deliveries.push({ tokens, notification });
+      return { invalidTokens: [], failedCount: 0 };
+    }
+  };
+  const app = await createApp(configFor(dataFile, [sender]));
+
+  try {
+    const caller = (await app.inject({
+      method: "POST",
+      url: "/v1/auth/guest",
+      payload: { deviceId: "voice-invite-caller-device", displayName: "Caller" }
+    })).json();
+    const recipient = (await app.inject({
+      method: "POST",
+      url: "/v1/auth/guest",
+      payload: { deviceId: "voice-invite-recipient-device", displayName: "Recipient" }
+    })).json();
+    const outsider = (await app.inject({
+      method: "POST",
+      url: "/v1/auth/guest",
+      payload: { deviceId: "voice-invite-outsider-device", displayName: "Outsider" }
+    })).json();
+
+    await app.inject({
+      method: "PUT",
+      url: "/v1/devices/push-token",
+      headers: { authorization: `Bearer ${recipient.accessToken}` },
+      payload: { token: "d".repeat(64), environment: "sandbox" }
+    });
+    const friendRequest = await app.inject({
+      method: "POST",
+      url: "/v1/friends/requests",
+      headers: { authorization: `Bearer ${caller.accessToken}` },
+      payload: { friendCode: recipient.user.friendCode }
+    });
+    await app.inject({
+      method: "POST",
+      url: `/v1/friends/requests/${friendRequest.json().request.id}/accept`,
+      headers: { authorization: `Bearer ${recipient.accessToken}` }
+    });
+    deliveries.length = 0;
+
+    const created = await app.inject({
+      method: "POST",
+      url: "/v1/voice/invitations",
+      headers: { authorization: `Bearer ${caller.accessToken}` },
+      payload: { targetId: recipient.user.id }
+    });
+    assert.equal(created.statusCode, 201);
+    const invitation = created.json().invitation;
+    assert.match(invitation.id, /^vin_/);
+    assert.equal(invitation.targetKind, "friend");
+    assert.equal(deliveries.length, 1);
+    assert.deepEqual(deliveries[0].tokens, ["d".repeat(64)]);
+    assert.equal(deliveries[0].notification.event, "voice_invitation");
+    assert.equal(deliveries[0].notification.data?.targetId, recipient.user.id);
+
+    const pending = await app.inject({
+      method: "GET",
+      url: "/v1/voice/invitations",
+      headers: { authorization: `Bearer ${recipient.accessToken}` }
+    });
+    assert.equal(pending.statusCode, 200);
+    assert.equal(pending.json().invitations[0].id, invitation.id);
+
+    const forbidden = await app.inject({
+      method: "POST",
+      url: `/v1/voice/invitations/${invitation.id}/respond`,
+      headers: { authorization: `Bearer ${outsider.accessToken}` },
+      payload: { action: "accept" }
+    });
+    assert.equal(forbidden.statusCode, 403);
+
+    const accepted = await app.inject({
+      method: "POST",
+      url: `/v1/voice/invitations/${invitation.id}/respond`,
+      headers: { authorization: `Bearer ${recipient.accessToken}` },
+      payload: { action: "accept" }
+    });
+    assert.equal(accepted.statusCode, 200);
+    assert.equal(accepted.json().action, "accept");
+
+    const noLongerPending = await app.inject({
+      method: "GET",
+      url: "/v1/voice/invitations",
+      headers: { authorization: `Bearer ${recipient.accessToken}` }
+    });
+    assert.deepEqual(noLongerPending.json().invitations, []);
+
+    const second = await app.inject({
+      method: "POST",
+      url: "/v1/voice/invitations",
+      headers: { authorization: `Bearer ${caller.accessToken}` },
+      payload: { targetId: recipient.user.id }
+    });
+    const cancelled = await app.inject({
+      method: "DELETE",
+      url: `/v1/voice/invitations/${second.json().invitation.id}`,
+      headers: { authorization: `Bearer ${caller.accessToken}` }
+    });
+    assert.equal(cancelled.statusCode, 204);
+    assert.equal(deliveries.at(-1)?.notification.event, "voice_cancelled");
+
+    const groupResponse = await app.inject({
+      method: "POST",
+      url: "/v1/groups",
+      headers: { authorization: `Bearer ${caller.accessToken}` },
+      payload: { name: "Voice Riders" }
+    });
+    const groupId = groupResponse.json().group.id;
+    await app.inject({
+      method: "POST",
+      url: `/v1/groups/${groupId}/members`,
+      headers: { authorization: `Bearer ${caller.accessToken}` },
+      payload: { userId: recipient.user.id }
+    });
+    deliveries.length = 0;
+
+    const groupInvitationResponse = await app.inject({
+      method: "POST",
+      url: "/v1/voice/invitations",
+      headers: { authorization: `Bearer ${caller.accessToken}` },
+      payload: { targetId: groupId }
+    });
+    assert.equal(groupInvitationResponse.statusCode, 201);
+    assert.equal(groupInvitationResponse.json().invitation.targetKind, "group");
+    assert.equal(groupInvitationResponse.json().invitation.targetName, "Voice Riders");
+    assert.equal(deliveries.length, 1);
+    assert.equal(deliveries[0].notification.event, "voice_invitation");
+    assert.equal(deliveries[0].notification.data?.targetKind, "group");
+    assert.equal(deliveries[0].notification.data?.targetId, groupId);
+  } finally {
+    await app.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("group membership controls management and group voice access", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "bikegogogo-test-"));
   const dataFile = path.join(directory, "data.json");

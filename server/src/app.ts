@@ -20,7 +20,8 @@ import {
   type FriendRequestRecord,
   type GroupRecord,
   type RideRecord,
-  type UserRecord
+  type UserRecord,
+  type VoiceInvitationRecord
 } from "./data-store.js";
 
 export type AppConfig = {
@@ -78,6 +79,19 @@ const publicRide = (ride: RideRecord) => ({
   endedAt: ride.endedAt,
   points: ride.points,
   metrics: ride.metrics
+});
+
+const publicVoiceInvitation = (
+  store: DataStore,
+  invitation: VoiceInvitationRecord
+) => ({
+  id: invitation.id,
+  caller: publicUser(store.userById(invitation.callerId)!),
+  targetId: invitation.targetId,
+  targetKind: invitation.targetKind,
+  targetName: invitation.targetName,
+  createdAt: invitation.createdAt,
+  expiresAt: invitation.expiresAt
 });
 
 export async function createApp(config: AppConfig) {
@@ -435,6 +449,99 @@ export async function createApp(config: AppConfig) {
   const tokenRequestSchema = z.object({
     canPublish: z.boolean().default(true),
     canSubscribe: z.boolean().default(true)
+  });
+
+  const voiceTargetSchema = z.object({
+    targetId: z.string().max(80).refine(
+      (value) => value.startsWith("usr_") || value.startsWith("grp_")
+    )
+  });
+  const voiceInvitationParamsSchema = z.object({
+    invitationId: z.string().startsWith("vin_").max(80)
+  });
+  const voiceInvitationResponseSchema = z.object({
+    action: z.enum(["accept", "decline"])
+  });
+
+  app.get("/v1/voice/invitations", async (request) => {
+    const currentUser = authenticatedUser(request);
+    return {
+      invitations: store.pendingVoiceInvitations(currentUser.id).map(
+        (invitation) => publicVoiceInvitation(store, invitation)
+      )
+    };
+  });
+
+  app.post("/v1/voice/invitations", {
+    config: { rateLimit: { max: 10, timeWindow: "1 minute" } }
+  }, async (request, reply) => {
+    const currentUser = authenticatedUser(request);
+    const body = voiceTargetSchema.parse(request.body);
+    const invitation = await store.createVoiceInvitation(
+      currentUser.id,
+      body.targetId
+    );
+    const notificationTitle = invitation.targetKind === "group"
+      ? "小队语音邀请"
+      : "好友语音邀请";
+    const notificationBody = invitation.targetKind === "group"
+      ? `${currentUser.displayName} 邀请你加入「${invitation.targetName}」语音`
+      : `${currentUser.displayName} 正在呼叫你`;
+
+    await Promise.all(invitation.recipientIds.map((recipientId) =>
+      notifyUser(recipientId, {
+        title: notificationTitle,
+        body: notificationBody,
+        event: "voice_invitation",
+        entityId: invitation.id,
+        data: {
+          invitationId: invitation.id,
+          callerId: currentUser.id,
+          callerName: currentUser.displayName,
+          targetId: invitation.targetId,
+          targetKind: invitation.targetKind,
+          targetName: invitation.targetName,
+          expiresAt: invitation.expiresAt
+        }
+      })
+    ));
+
+    return reply.status(201).send({
+      invitation: publicVoiceInvitation(store, invitation)
+    });
+  });
+
+  app.post("/v1/voice/invitations/:invitationId/respond", async (request) => {
+    const currentUser = authenticatedUser(request);
+    const params = voiceInvitationParamsSchema.parse(request.params);
+    const body = voiceInvitationResponseSchema.parse(request.body);
+    const invitation = await store.respondToVoiceInvitation(
+      params.invitationId,
+      currentUser.id
+    );
+    return {
+      invitation: publicVoiceInvitation(store, invitation),
+      action: body.action
+    };
+  });
+
+  app.delete("/v1/voice/invitations/:invitationId", async (request, reply) => {
+    const currentUser = authenticatedUser(request);
+    const params = voiceInvitationParamsSchema.parse(request.params);
+    const invitation = await store.cancelVoiceInvitation(
+      params.invitationId,
+      currentUser.id
+    );
+    await Promise.all(invitation.recipientIds.map((recipientId) =>
+      notifyUser(recipientId, {
+        title: "语音邀请已取消",
+        body: `${currentUser.displayName} 已结束本次呼叫`,
+        event: "voice_cancelled",
+        entityId: invitation.id,
+        data: { invitationId: invitation.id }
+      })
+    ));
+    return reply.status(204).send();
   });
 
   app.post("/v1/voice/rooms/:groupId/token", {

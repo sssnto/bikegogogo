@@ -1,3 +1,4 @@
+import AVFAudio
 import Combine
 import Foundation
 import LiveKit
@@ -24,6 +25,7 @@ struct VoiceParticipantSnapshot: Identifiable, Equatable {
     var isMuted: Bool
     var isSpeaking: Bool
     var connectionQuality: String
+    var audioStatus: String
     var isLocal: Bool
 }
 
@@ -34,10 +36,17 @@ final class VoiceRoomClient: NSObject, ObservableObject, RoomDelegate, @unchecke
     @Published private(set) var isMuted = false
     @Published private(set) var participants: [VoiceParticipantSnapshot] = []
     @Published private(set) var latestTokenResponse: VoiceTokenResponse?
+    @Published private(set) var audioRouteName = "正在准备音频"
     @Published private(set) var errorMessage: String?
 
     private let tokenService = VoiceTokenService()
     private lazy var room = Room(delegate: self)
+
+    override init() {
+        super.init()
+        AudioManager.shared.audioSession.isAutomaticConfigurationEnabled = false
+        AudioManager.shared.audioSession.isSpeakerOutputPreferred = true
+    }
 
     func join(
         groupID: String,
@@ -53,6 +62,10 @@ final class VoiceRoomClient: NSObject, ObservableObject, RoomDelegate, @unchecke
         errorMessage = nil
 
         do {
+            guard await requestMicrophonePermission() else {
+                throw VoiceAudioError.microphonePermissionDenied
+            }
+            try configureAudioSession()
             let response = try await tokenService.token(
                 groupID: groupID,
                 accessToken: accessToken
@@ -60,7 +73,15 @@ final class VoiceRoomClient: NSObject, ObservableObject, RoomDelegate, @unchecke
             latestTokenResponse = response
 
             try await room.connect(url: response.url.absoluteString, token: response.token)
-            try await room.localParticipant.setMicrophone(enabled: true)
+            let microphonePublication = try await room.localParticipant.setMicrophone(
+                enabled: true
+            )
+            guard microphonePublication != nil,
+                  room.localParticipant.audioTracks.contains(where: {
+                      $0.source == .microphone && !$0.isMuted
+                  }) else {
+                throw VoiceAudioError.microphoneTrackUnavailable
+            }
 
             status = .connected
             isConnected = true
@@ -68,6 +89,7 @@ final class VoiceRoomClient: NSObject, ObservableObject, RoomDelegate, @unchecke
             refreshParticipants()
         } catch {
             await room.disconnect()
+            deactivateAudioSession()
             status = .disconnected
             isConnected = false
             participants = []
@@ -77,6 +99,7 @@ final class VoiceRoomClient: NSObject, ObservableObject, RoomDelegate, @unchecke
 
     func leave() async {
         await room.disconnect()
+        deactivateAudioSession()
         status = .disconnected
         isConnected = false
         isMuted = false
@@ -89,7 +112,13 @@ final class VoiceRoomClient: NSObject, ObservableObject, RoomDelegate, @unchecke
 
         do {
             try await room.localParticipant.setMicrophone(enabled: !muted)
-            isMuted = muted
+            let microphoneEnabled = room.localParticipant.audioTracks.contains {
+                $0.source == .microphone && !$0.isMuted
+            }
+            isMuted = !microphoneEnabled
+            if !muted, !microphoneEnabled {
+                throw VoiceAudioError.microphoneTrackUnavailable
+            }
             refreshParticipants()
         } catch {
             errorMessage = "切换麦克风失败：\(error.localizedDescription)"
@@ -117,6 +146,46 @@ final class VoiceRoomClient: NSObject, ObservableObject, RoomDelegate, @unchecke
             isConnected = false
         }
         refreshParticipants()
+    }
+
+    private func requestMicrophonePermission() async -> Bool {
+        switch AVAudioApplication.shared.recordPermission {
+        case .granted:
+            return true
+        case .denied:
+            return false
+        case .undetermined:
+            return await AVAudioApplication.requestRecordPermission()
+        @unknown default:
+            return false
+        }
+    }
+
+    private func configureAudioSession() throws {
+        let session = AVAudioSession.sharedInstance()
+        try session.setCategory(
+            .playAndRecord,
+            mode: .voiceChat,
+            options: [.allowBluetoothHFP, .allowBluetoothA2DP, .defaultToSpeaker]
+        )
+        try session.setActive(true)
+        updateAudioRoute()
+    }
+
+    private func deactivateAudioSession() {
+        try? AVAudioSession.sharedInstance().setActive(
+            false,
+            options: .notifyOthersOnDeactivation
+        )
+        audioRouteName = "音频已关闭"
+    }
+
+    private func updateAudioRoute() {
+        let outputs = AVAudioSession.sharedInstance().currentRoute.outputs
+        audioRouteName = outputs.map(\.portName).joined(separator: "、")
+        if audioRouteName.isEmpty {
+            audioRouteName = "系统默认音频设备"
+        }
     }
 
     private func refreshParticipants() {
@@ -149,8 +218,24 @@ final class VoiceRoomClient: NSObject, ObservableObject, RoomDelegate, @unchecke
             isMuted: !participant.isMicrophoneEnabled(),
             isSpeaking: participant.isSpeaking,
             connectionQuality: qualityTitle(participant.connectionQuality),
+            audioStatus: audioStatus(for: participant, isLocal: isLocal),
             isLocal: isLocal
         )
+    }
+
+    private func audioStatus(for participant: Participant, isLocal: Bool) -> String {
+        guard let publication = participant.audioTracks.first(where: {
+            $0.source == .microphone
+        }) else {
+            return isLocal ? "麦克风未发布" : "等待对方麦克风"
+        }
+        if publication.isMuted {
+            return "麦克风已静音"
+        }
+        if isLocal || publication.isSubscribed {
+            return isLocal ? "麦克风已发送" : "语音已接收"
+        }
+        return "正在订阅语音"
     }
 
     private func qualityTitle(_ quality: ConnectionQuality) -> String {
@@ -210,6 +295,43 @@ final class VoiceRoomClient: NSObject, ObservableObject, RoomDelegate, @unchecke
     ) {
         Task { @MainActor in
             refreshParticipants()
+        }
+    }
+
+    nonisolated func room(
+        _ room: Room,
+        participant: RemoteParticipant,
+        didSubscribeTrack publication: RemoteTrackPublication
+    ) {
+        Task { @MainActor in
+            updateAudioRoute()
+            refreshParticipants()
+        }
+    }
+
+    nonisolated func room(
+        _ room: Room,
+        participant: RemoteParticipant,
+        didFailToSubscribeTrackWithSid trackSid: Track.Sid,
+        error: LiveKitError
+    ) {
+        Task { @MainActor in
+            errorMessage = "接收 \(participant.name ?? "骑友") 的语音失败，请退出后重新呼叫。"
+            refreshParticipants()
+        }
+    }
+}
+
+private enum VoiceAudioError: LocalizedError {
+    case microphonePermissionDenied
+    case microphoneTrackUnavailable
+
+    var errorDescription: String? {
+        switch self {
+        case .microphonePermissionDenied:
+            "麦克风权限未开启，请到“设置 > 隐私与安全性 > 麦克风”允许 BikeGoGo 使用麦克风。"
+        case .microphoneTrackUnavailable:
+            "麦克风音轨没有成功发送，请检查系统麦克风权限和蓝牙耳机连接。"
         }
     }
 }
