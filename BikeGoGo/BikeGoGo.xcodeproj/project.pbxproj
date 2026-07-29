@@ -340,7 +340,7 @@
 			mainGroup = 6FA2ABD03013120600385B45;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				6FA2AC0D3013216600385B45 /* XCLocalSwiftPackageReference "../../bikegogogo" */,
+				6FA2AC0D3013216600385B45 /* XCLocalSwiftPackageReference ".." */,
 				6FA2AC103013216600385B45 /* XCRemoteSwiftPackageReference "client-sdk-swift" */,
 			);
 			preferredProjectObjectVersion = 77;
@@ -707,9 +707,9 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		6FA2AC0D3013216600385B45 /* XCLocalSwiftPackageReference "../../bikegogogo" */ = {
+		6FA2AC0D3013216600385B45 /* XCLocalSwiftPackageReference ".." */ = {
 			isa = XCLocalSwiftPackageReference;
-			relativePath = ../../bikegogogo;
+			relativePath = ..;
 		};
 /* End XCLocalSwiftPackageReference section */
 
