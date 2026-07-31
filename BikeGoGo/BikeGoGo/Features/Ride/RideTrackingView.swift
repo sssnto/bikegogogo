@@ -651,7 +651,7 @@ struct RideTrackingView: View {
         color: Color
     )? {
         guard let meetingPoint = appState.teamMeetingPoint,
-              let point = appState.currentRide.points.last else {
+              let point = appState.currentReliableLocation else {
             return nil
         }
         let distance = CLLocation(
@@ -1023,7 +1023,7 @@ private struct TeamRideStatusSheet: View {
     private func meetingPointDistanceText(
         _ meetingPoint: GroupMeetingPoint
     ) -> String {
-        guard let point = appState.currentRide.points.last else {
+        guard let point = appState.currentReliableLocation else {
             return "等待当前位置"
         }
         let riderLocation = CLLocation(
@@ -1051,7 +1051,7 @@ private struct TeamRideStatusSheet: View {
     private func meetingPointETAForCurrentUser(
         _ meetingPoint: GroupMeetingPoint
     ) -> String {
-        guard let point = appState.currentRide.points.last else {
+        guard let point = appState.currentReliableLocation else {
             return "等待当前位置"
         }
         let distance = CLLocation(
@@ -1086,7 +1086,7 @@ private struct TeamRideStatusSheet: View {
             let coordinate: CLLocationCoordinate2D?
             let speedMetersPerSecond: Double?
             let averageSpeedMetersPerSecond: Double?
-            if isCurrentUser, let point = appState.currentRide.points.last {
+            if isCurrentUser, let point = appState.currentReliableLocation {
                 coordinate = CLLocationCoordinate2D(
                     latitude: point.latitude,
                     longitude: point.longitude

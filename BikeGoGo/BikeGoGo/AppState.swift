@@ -17,6 +17,7 @@ final class AppState: ObservableObject {
     @Published private(set) var locationAuthorizationStatus: CLAuthorizationStatus = .notDetermined
     @Published private(set) var currentSpeedMetersPerSecond = 0.0
     @Published private(set) var locationAccuracyMeters: Double?
+    @Published private(set) var currentReliableLocation: RidePoint?
     @Published private(set) var isWaitingForAccurateLocation = false
     @Published private(set) var watchHeartRate = 0.0
     @Published var rideAlertMessage: String?
@@ -169,9 +170,15 @@ final class AppState: ObservableObject {
                 self.currentRide.metrics = RideStatisticsCalculator.metrics(for: points)
                 self.currentRide.metrics.elapsedDurationSeconds = self.rideElapsedDuration()
                 await self.persistActiveRide()
-                await self.publishRideLocationIfNeeded(points.last)
                 await self.evaluateRouteDeviation(points.last)
-                await self.evaluateMeetingPointArrival(points.last)
+            }
+        }
+        rideRecorder.onReliableLocationChanged = { [weak self] point in
+            Task { @MainActor in
+                guard let self else { return }
+                self.currentReliableLocation = point
+                await self.publishRideLocationIfNeeded(point)
+                await self.evaluateMeetingPointArrival(point)
             }
         }
 
@@ -229,6 +236,7 @@ final class AppState: ObservableObject {
         activeElapsedSeconds = 0
         activeSegmentStartedAt = now
         recorderNeedsRestart = false
+        currentReliableLocation = nil
         currentRide = RideSession(
             title: "本次骑行",
             state: .recording,
@@ -279,6 +287,7 @@ final class AppState: ObservableObject {
         currentRide.metrics = RideStatisticsCalculator.metrics(for: currentRide.points)
         currentRide.metrics.elapsedDurationSeconds = activeElapsedSeconds
         rideRecorder.stop()
+        currentReliableLocation = nil
 
         if !currentRide.points.isEmpty {
             recentRides.insert(currentRide, at: 0)
@@ -297,6 +306,7 @@ final class AppState: ObservableObject {
 
     func discardCurrentRide() {
         rideRecorder.stop()
+        currentReliableLocation = nil
         currentRide = RideSession(
             title: "准备开始骑行",
             state: .idle,
@@ -520,7 +530,8 @@ final class AppState: ObservableObject {
             rideAlertMessage = "当前小队或账户状态不可用，请刷新后重试。"
             return
         }
-        guard let point = currentRide.points.last,
+        guard let point = currentReliableLocation,
+              abs(Date().timeIntervalSince(point.timestamp)) <= 30,
               let accuracy = point.horizontalAccuracyMeters,
               accuracy <= RideLocationFilter.maximumTrackingHorizontalAccuracyMeters else {
             rideAlertMessage = "正在等待准确的 GPS 位置，请到开阔处稍后重试。"
@@ -588,7 +599,7 @@ final class AppState: ObservableObject {
         isSharingRideLocation = true
         locationSharingMessage = nil
         liveLocationUploadPolicy.reset()
-        await publishRideLocationIfNeeded(currentRide.points.last, force: true)
+        await publishRideLocationIfNeeded(currentReliableLocation, force: true)
         await refreshTeammateLocations()
         await refreshTeamMeetingPoint()
         startLocationSharingRefreshLoop()
@@ -633,7 +644,8 @@ final class AppState: ObservableObject {
             rideAlertMessage = "请输入集合点名称。"
             return
         }
-        guard let point = currentRide.points.last,
+        guard let point = currentReliableLocation,
+              abs(Date().timeIntervalSince(point.timestamp)) <= 30,
               let accuracy = point.horizontalAccuracyMeters,
               accuracy <= RideLocationFilter.maximumTrackingHorizontalAccuracyMeters else {
             rideAlertMessage = "正在等待准确的 GPS 位置，请到开阔处稍后重试。"
@@ -764,7 +776,7 @@ final class AppState: ObservableObject {
                 meetingPointArrivalEvaluation = nil
             }
             teamMeetingPoint = meetingPoint
-            await evaluateMeetingPointArrival(currentRide.points.last)
+            await evaluateMeetingPointArrival(currentReliableLocation)
         } catch {
             print("Refreshing team meeting point failed: \(error.localizedDescription)")
         }
@@ -773,7 +785,7 @@ final class AppState: ObservableObject {
     private func updateTeamSafetyStatus(
         with locations: [GroupLiveLocation]
     ) async {
-        guard let riderLocation = currentRide.points.last else {
+        guard let riderLocation = currentReliableLocation else {
             teamRideMemberStatuses = []
             return
         }
@@ -881,7 +893,7 @@ final class AppState: ObservableObject {
                 )
                 guard !Task.isCancelled else { return }
                 await self.publishRideLocationIfNeeded(
-                    self.currentRide.points.last
+                    self.currentReliableLocation
                 )
                 await self.refreshTeammateLocations()
                 await self.refreshTeamMeetingPoint()

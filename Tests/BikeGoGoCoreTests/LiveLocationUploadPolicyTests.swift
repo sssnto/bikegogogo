@@ -60,15 +60,63 @@ import Testing
     ))
 }
 
+@Test func liveLocationPolicyQuicklyPublishesCorrectedGPSFix() {
+    let start = Date(timeIntervalSince1970: 5_000)
+    let initial = point(
+        latitude: 39.9,
+        speed: 0,
+        accuracy: 12,
+        timestamp: start
+    )
+    let corrected = point(
+        latitude: 39.9003,
+        speed: 0,
+        accuracy: 8,
+        timestamp: start.addingTimeInterval(6)
+    )
+    var policy = LiveLocationUploadPolicy()
+    policy.markUploaded(initial, at: start)
+
+    #expect(policy.shouldUpload(
+        corrected,
+        at: start.addingTimeInterval(6)
+    ))
+}
+
+@Test func liveLocationPolicyIgnoresSmallStationaryJitter() {
+    let start = Date(timeIntervalSince1970: 6_000)
+    let initial = point(
+        latitude: 39.9,
+        speed: 0,
+        accuracy: 8,
+        timestamp: start
+    )
+    let jitter = point(
+        latitude: 39.90005,
+        speed: 0,
+        accuracy: 8,
+        timestamp: start.addingTimeInterval(6)
+    )
+    var policy = LiveLocationUploadPolicy()
+    policy.markUploaded(initial, at: start)
+
+    #expect(!policy.shouldUpload(
+        jitter,
+        at: start.addingTimeInterval(6)
+    ))
+}
+
 private func point(
     latitude: Double,
     speed: Double,
+    accuracy: Double? = nil,
     timestamp: Date
 ) -> RidePoint {
     RidePoint(
         latitude: latitude,
         longitude: 116,
         speedMetersPerSecond: speed,
+        horizontalAccuracyMeters: accuracy,
         timestamp: timestamp
     )
 }

@@ -7,6 +7,8 @@ public struct LiveLocationUploadPolicy: Sendable {
     public let minimumStationaryIntervalSeconds: TimeInterval
     public let stationaryHeartbeatIntervalSeconds: TimeInterval
     public let minimumStationaryDistanceMeters: Double
+    public let minimumCorrectionIntervalSeconds: TimeInterval
+    public let minimumCorrectionDistanceMeters: Double
 
     private var lastUploadedPoint: RidePoint?
     private var lastUploadedAt: Date?
@@ -17,7 +19,9 @@ public struct LiveLocationUploadPolicy: Sendable {
         minimumMovingDistanceMeters: Double = 20,
         minimumStationaryIntervalSeconds: TimeInterval = 25,
         stationaryHeartbeatIntervalSeconds: TimeInterval = 45,
-        minimumStationaryDistanceMeters: Double = 15
+        minimumStationaryDistanceMeters: Double = 15,
+        minimumCorrectionIntervalSeconds: TimeInterval = 5,
+        minimumCorrectionDistanceMeters: Double = 20
     ) {
         self.minimumMovingIntervalSeconds = minimumMovingIntervalSeconds
         self.maximumMovingIntervalSeconds = maximumMovingIntervalSeconds
@@ -25,6 +29,8 @@ public struct LiveLocationUploadPolicy: Sendable {
         self.minimumStationaryIntervalSeconds = minimumStationaryIntervalSeconds
         self.stationaryHeartbeatIntervalSeconds = stationaryHeartbeatIntervalSeconds
         self.minimumStationaryDistanceMeters = minimumStationaryDistanceMeters
+        self.minimumCorrectionIntervalSeconds = minimumCorrectionIntervalSeconds
+        self.minimumCorrectionDistanceMeters = minimumCorrectionDistanceMeters
     }
 
     public func shouldUpload(
@@ -43,6 +49,12 @@ public struct LiveLocationUploadPolicy: Sendable {
             from: lastUploadedPoint,
             to: candidate
         )
+        let hasNewerFix = candidate.timestamp > lastUploadedPoint.timestamp
+        if hasNewerFix,
+           elapsed >= minimumCorrectionIntervalSeconds,
+           distance >= minimumCorrectionDistanceMeters {
+            return true
+        }
         let reportedSpeed = max(candidate.speedMetersPerSecond ?? 0, 0)
         let calculatedSpeed = elapsed > 0 ? distance / elapsed : 0
         let isMoving = max(reportedSpeed, calculatedSpeed) >= 1.5
