@@ -131,6 +131,12 @@ struct RideTrackingView: View {
                 TeamRideStatusSheet()
                     .environmentObject(appState)
             }
+            .onAppear {
+                if appState.currentRide.state == .idle
+                    || appState.currentRide.state == .finished {
+                    appState.refreshRideWeather()
+                }
+            }
         }
     }
 
@@ -186,15 +192,18 @@ struct RideTrackingView: View {
         .frame(maxWidth: .infinity)
         .frame(height: 320)
         .overlay(alignment: .topLeading) {
-            if let locationStatus {
-                Label(locationStatus.text, systemImage: locationStatus.icon)
-                    .font(.caption)
-                    .foregroundStyle(locationStatus.color)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
-                    .padding(12)
+            VStack(alignment: .leading, spacing: 6) {
+                if let locationStatus {
+                    Label(locationStatus.text, systemImage: locationStatus.icon)
+                        .foregroundStyle(locationStatus.color)
+                }
+                weatherStatus
             }
+            .font(.caption)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+            .padding(12)
         }
         .overlay(alignment: .topTrailing) {
             rideMapActions
@@ -562,6 +571,60 @@ struct RideTrackingView: View {
     }
 
     @ViewBuilder
+    private var weatherStatus: some View {
+        let isActiveRide = appState.currentRide.state == .recording
+            || appState.currentRide.state == .paused
+        let weather = isActiveRide
+            ? appState.currentRide.weather ?? appState.currentWeather
+            : appState.currentWeather
+        if let weather {
+            HStack(spacing: 8) {
+                Label(
+                    "\(Int(weather.temperatureCelsius.rounded()))° · \(weather.conditionText)",
+                    systemImage: weather.symbolName
+                )
+                if let humidity = weather.relativeHumidityPercent {
+                    Label("\(Int(humidity.rounded()))%", systemImage: "humidity.fill")
+                }
+                if let windSpeed = weather.windSpeedKilometersPerHour {
+                    Label(
+                        String(format: "%.0f km/h", windSpeed),
+                        systemImage: "wind"
+                    )
+                }
+            }
+            .lineLimit(1)
+            .minimumScaleFactor(0.75)
+            .foregroundStyle(.primary)
+
+            if let sourceURL = appState.weatherAttributionURL {
+                Link(destination: sourceURL) {
+                    Text("Apple 天气")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        } else if appState.isRefreshingWeather {
+            HStack(spacing: 6) {
+                ProgressView()
+                Text("正在更新天气")
+            }
+            .foregroundStyle(.secondary)
+        } else {
+            Button {
+                appState.refreshRideWeather()
+            } label: {
+                Label(
+                    appState.weatherMessage ?? "更新天气",
+                    systemImage: "cloud.sun"
+                )
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
     private var locationSharingMenu: some View {
         let isActiveRide = appState.currentRide.state == .recording
             || appState.currentRide.state == .paused
@@ -793,7 +856,10 @@ struct RideTrackingView: View {
                 Button {
                     appState.resumeRide()
                 } label: {
-                    Label("继续", systemImage: "play.fill")
+                    Label(
+                        appState.isAutomaticallyPaused ? "自动暂停 · 继续" : "继续",
+                        systemImage: "play.fill"
+                    )
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)

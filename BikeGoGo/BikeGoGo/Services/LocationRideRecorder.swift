@@ -14,9 +14,13 @@ final class LocationRideRecorder: NSObject, ObservableObject {
 
     var onPointsChanged: (([RidePoint]) -> Void)?
     var onReliableLocationChanged: ((RidePoint) -> Void)?
+    var onCurrentLocationChanged: ((RidePoint) -> Void)?
+    var onMotionChanged: ((Double, Double, Double?, Date) -> Void)?
 
     private let manager = CLLocationManager()
     private var isRecording = false
+    private var isMonitoringForAutoResume = false
+    private var isRequestingCurrentLocation = false
     private var locationFilter = RideLocationFilter()
 
     override init() {
@@ -36,6 +40,22 @@ final class LocationRideRecorder: NSObject, ObservableObject {
         }
     }
 
+    func requestCurrentLocation() {
+        isRequestingCurrentLocation = true
+        lastErrorMessage = nil
+        switch manager.authorizationStatus {
+        case .authorizedAlways, .authorizedWhenInUse:
+            configureActiveTracking()
+            manager.requestLocation()
+        case .notDetermined:
+            manager.requestWhenInUseAuthorization()
+        case .denied, .restricted:
+            isRequestingCurrentLocation = false
+        @unknown default:
+            isRequestingCurrentLocation = false
+        }
+    }
+
     func start(keepingExistingPoints: Bool = false) {
         if !keepingExistingPoints {
             points.removeAll()
@@ -46,26 +66,35 @@ final class LocationRideRecorder: NSObject, ObservableObject {
         latestReliablePoint = nil
         isWaitingForAccurateLocation = true
         isRecording = true
+        isMonitoringForAutoResume = false
         configureActiveTracking()
         manager.allowsBackgroundLocationUpdates = true
         manager.showsBackgroundLocationIndicator = true
         manager.startUpdatingLocation()
     }
 
-    func pause() {
+    func pause(keepingMotionUpdates: Bool = false) {
         isRecording = false
+        isMonitoringForAutoResume = keepingMotionUpdates
         currentSpeedMetersPerSecond = 0
-        manager.stopUpdatingLocation()
+        if keepingMotionUpdates {
+            configureActiveTracking()
+            manager.startUpdatingLocation()
+        } else {
+            manager.stopUpdatingLocation()
+        }
     }
 
     func resume() {
         isRecording = true
+        isMonitoringForAutoResume = false
         configureActiveTracking()
         manager.startUpdatingLocation()
     }
 
     func stop() {
         isRecording = false
+        isMonitoringForAutoResume = false
         currentSpeedMetersPerSecond = 0
         locationAccuracyMeters = nil
         latestReliablePoint = nil
@@ -94,10 +123,16 @@ extension LocationRideRecorder: CLLocationManagerDelegate {
         if manager.authorizationStatus == .authorizedWhenInUse {
             manager.requestAlwaysAuthorization()
         }
+        if isRequestingCurrentLocation,
+           manager.authorizationStatus == .authorizedAlways
+            || manager.authorizationStatus == .authorizedWhenInUse {
+            manager.requestLocation()
+        }
     }
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        guard isRecording else { return }
+        guard isRecording || isMonitoringForAutoResume
+                || isRequestingCurrentLocation else { return }
 
         let freshnessThreshold = Date().addingTimeInterval(-15)
         let freshLocations = locations
@@ -114,6 +149,12 @@ extension LocationRideRecorder: CLLocationManagerDelegate {
             } else {
                 currentSpeedMetersPerSecond = 0
             }
+            onMotionChanged?(
+                max(latest.speed, 0),
+                latest.horizontalAccuracy,
+                latest.speedAccuracy >= 0 ? latest.speedAccuracy : nil,
+                latest.timestamp
+            )
         }
 
         if let reliableLocation = freshLocations.last(where: {
@@ -123,8 +164,16 @@ extension LocationRideRecorder: CLLocationManagerDelegate {
         }) {
             let point = Self.ridePoint(from: reliableLocation)
             latestReliablePoint = point
-            onReliableLocationChanged?(point)
+            if isRequestingCurrentLocation {
+                onCurrentLocationChanged?(point)
+            }
+            if isRecording {
+                onReliableLocationChanged?(point)
+            }
+            isRequestingCurrentLocation = false
         }
+
+        guard isRecording else { return }
 
         var newPoints: [RidePoint] = []
         for location in freshLocations {
@@ -142,6 +191,7 @@ extension LocationRideRecorder: CLLocationManagerDelegate {
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         guard (error as? CLError)?.code != .locationUnknown else { return }
+        isRequestingCurrentLocation = false
         lastErrorMessage = error.localizedDescription
     }
 

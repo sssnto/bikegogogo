@@ -6,6 +6,11 @@ import HealthKit
 actor HealthKitRideImporter {
     private let healthStore = HKHealthStore()
 
+    struct ImportResult: Sendable {
+        let rides: [RideSession]
+        let discoveredWorkoutCount: Int
+    }
+
     func requestAuthorization() async throws {
         guard HKHealthStore.isHealthDataAvailable() else {
             throw HealthKitRideImportError.healthDataUnavailable
@@ -35,18 +40,17 @@ actor HealthKitRideImporter {
             value: -1,
             to: Date()
         ) ?? .distantPast
-    ) async throws -> [RideSession] {
+    ) async throws -> ImportResult {
         let workouts = try await cyclingWorkouts(since: startDate)
         var rides: [RideSession] = []
         rides.reserveCapacity(workouts.count)
         for workout in workouts {
-            do {
-                rides.append(try await ride(from: workout))
-            } catch {
-                print("Skipping HealthKit workout \(workout.uuid): \(error.localizedDescription)")
-            }
+            rides.append(await ride(from: workout))
         }
-        return rides.sorted { $0.startedAt > $1.startedAt }
+        return ImportResult(
+            rides: rides.sorted { $0.startedAt > $1.startedAt },
+            discoveredWorkoutCount: workouts.count
+        )
     }
 
     private func cyclingWorkouts(since startDate: Date) async throws -> [HKWorkout] {
@@ -83,23 +87,25 @@ actor HealthKitRideImporter {
         }
     }
 
-    private func ride(from workout: HKWorkout) async throws -> RideSession {
-        async let locationsResult = routeLocations(for: workout)
-        async let heartRateSamplesResult = quantitySamples(
+    private func ride(from workout: HKWorkout) async -> RideSession {
+        // HealthKit workouts do not always contain every optional series. A missing
+        // route or sensor stream must not discard the workout and its other data.
+        async let locationsResult: [CLLocation]? = try? await routeLocations(for: workout)
+        async let heartRateSamplesResult: [HKQuantitySample]? = try? await quantitySamples(
             type: quantityType(.heartRate),
             workout: workout
         )
-        async let distanceResult = sum(
+        async let distanceResult: Double? = try? await sum(
             type: quantityType(.distanceCycling),
             unit: .meter(),
             workout: workout
         )
-        async let activeEnergyResult = sum(
+        async let activeEnergyResult: Double? = try? await sum(
             type: quantityType(.activeEnergyBurned),
             unit: .kilocalorie(),
             workout: workout
         )
-        async let basalEnergyResult = sum(
+        async let basalEnergyResult: Double? = try? await sum(
             type: quantityType(.basalEnergyBurned),
             unit: .kilocalorie(),
             startDate: workout.startDate,
@@ -109,24 +115,24 @@ actor HealthKitRideImporter {
         let cyclingSpeedType = quantityType(.cyclingSpeed)
         let cyclingCadenceType = quantityType(.cyclingCadence)
         let cyclingPowerType = quantityType(.cyclingPower)
-        async let speedSummaryResult = discreteSummary(
+        async let speedSummaryResult: (average: Double?, maximum: Double?)? = try? await discreteSummary(
             type: cyclingSpeedType,
             unit: HKUnit.meter().unitDivided(by: .second()),
             workout: workout
         )
-        async let cadenceSamplesResult = quantitySamples(
+        async let cadenceSamplesResult: [HKQuantitySample]? = try? await quantitySamples(
             type: cyclingCadenceType,
             workout: workout
         )
-        async let powerSamplesResult = quantitySamples(
+        async let powerSamplesResult: [HKQuantitySample]? = try? await quantitySamples(
             type: cyclingPowerType,
             workout: workout
         )
 
-        let locations = try await locationsResult
-        let heartRateSamples = try await heartRateSamplesResult
-        let cadenceSamples = try await cadenceSamplesResult
-        let powerSamples = try await powerSamplesResult
+        let locations = await locationsResult ?? []
+        let heartRateSamples = await heartRateSamplesResult ?? []
+        let cadenceSamples = await cadenceSamplesResult ?? []
+        let powerSamples = await powerSamplesResult ?? []
         var points = locations.map(ridePoint(from:))
         attach(
             samples: heartRateSamples,
@@ -162,12 +168,12 @@ actor HealthKitRideImporter {
         let workoutActiveEnergy = workout.statistics(for: activeEnergyType)?
             .sumQuantity()?
             .doubleValue(for: .kilocalorie())
-        let distance = try await distanceResult
+        let distance = await distanceResult
             ?? workoutDistance
             ?? routeMetrics.distanceMeters
-        let activeEnergy = try await activeEnergyResult ?? workoutActiveEnergy
-        let basalEnergy = try await basalEnergyResult
-        let speedSummary = try await speedSummaryResult
+        let activeEnergy = await activeEnergyResult ?? workoutActiveEnergy
+        let basalEnergy = await basalEnergyResult
+        let speedSummary = await speedSummaryResult ?? (average: nil, maximum: nil)
         let heartRateSummary = summary(
             samples: heartRateSamples,
             unit: HKUnit.count().unitDivided(by: .minute())

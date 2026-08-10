@@ -99,6 +99,43 @@ public struct RideMetrics: Codable, Equatable, Sendable {
     }
 }
 
+public struct RideWeatherSnapshot: Codable, Equatable, Sendable {
+    public var temperatureCelsius: Double
+    public var apparentTemperatureCelsius: Double?
+    public var relativeHumidityPercent: Double?
+    public var windSpeedKilometersPerHour: Double?
+    public var windDirectionDegrees: Double?
+    public var conditionText: String
+    public var symbolName: String
+    public var capturedAt: Date
+    public var latitude: Double
+    public var longitude: Double
+
+    public init(
+        temperatureCelsius: Double,
+        apparentTemperatureCelsius: Double? = nil,
+        relativeHumidityPercent: Double? = nil,
+        windSpeedKilometersPerHour: Double? = nil,
+        windDirectionDegrees: Double? = nil,
+        conditionText: String,
+        symbolName: String,
+        capturedAt: Date = Date(),
+        latitude: Double,
+        longitude: Double
+    ) {
+        self.temperatureCelsius = temperatureCelsius
+        self.apparentTemperatureCelsius = apparentTemperatureCelsius
+        self.relativeHumidityPercent = relativeHumidityPercent
+        self.windSpeedKilometersPerHour = windSpeedKilometersPerHour
+        self.windDirectionDegrees = windDirectionDegrees
+        self.conditionText = conditionText
+        self.symbolName = symbolName
+        self.capturedAt = capturedAt
+        self.latitude = latitude
+        self.longitude = longitude
+    }
+}
+
 public struct RideSession: Identifiable, Codable, Equatable, Sendable {
     public var id: UUID
     public var title: String
@@ -108,6 +145,7 @@ public struct RideSession: Identifiable, Codable, Equatable, Sendable {
     public var endedAt: Date?
     public var points: [RidePoint]
     public var metrics: RideMetrics
+    public var weather: RideWeatherSnapshot?
 
     public init(
         id: UUID = UUID(),
@@ -117,7 +155,8 @@ public struct RideSession: Identifiable, Codable, Equatable, Sendable {
         startedAt: Date = Date(),
         endedAt: Date? = nil,
         points: [RidePoint] = [],
-        metrics: RideMetrics = RideMetrics()
+        metrics: RideMetrics = RideMetrics(),
+        weather: RideWeatherSnapshot? = nil
     ) {
         self.id = id
         self.title = title
@@ -127,6 +166,7 @@ public struct RideSession: Identifiable, Codable, Equatable, Sendable {
         self.endedAt = endedAt
         self.points = points
         self.metrics = metrics
+        self.weather = weather
     }
 }
 

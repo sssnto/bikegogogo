@@ -8,8 +8,19 @@ struct RideDetailView: View {
     @EnvironmentObject private var appState: AppState
     @State private var exportedURL: URL?
     @State private var isExporting = false
+    @State private var hasStartedRoutePlayback = false
+    @State private var routePlaybackStartedAt: Date?
+    @State private var routePlaybackToken = UUID()
 
-    var ride: RideSession
+    private let initialRide: RideSession
+
+    init(ride: RideSession) {
+        initialRide = ride
+    }
+
+    private var ride: RideSession {
+        appState.recentRides.first { $0.id == initialRide.id } ?? initialRide
+    }
 
     private var coordinates: [CLLocationCoordinate2D] {
         ride.points.map {
@@ -41,12 +52,13 @@ struct RideDetailView: View {
     var body: some View {
         List {
             Section {
-                Map(initialPosition: camera) {
-                    if coordinates.count > 1 {
-                        MapPolyline(coordinates: coordinates)
-                            .stroke(.green, lineWidth: 5)
-                    }
-                }
+                AnimatedRideRouteMap(
+                    coordinates: coordinates,
+                    camera: camera,
+                    playbackStartedAt: routePlaybackStartedAt,
+                    playbackDuration: routePlaybackDuration,
+                    onReplay: startRoutePlayback
+                )
                 .frame(height: 260)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 .listRowInsets(EdgeInsets())
@@ -85,13 +97,74 @@ struct RideDetailView: View {
                 }
             }
 
-            if heartRateSamples.count > 1 {
-                Section("心率") {
+            if let weather = ride.weather {
+                Section("骑行天气") {
+                    Label(
+                        "\(Int(weather.temperatureCelsius.rounded()))° · \(weather.conditionText)",
+                        systemImage: weather.symbolName
+                    )
+                    if let apparent = weather.apparentTemperatureCelsius {
+                        metricRow("体感温度", "\(Int(apparent.rounded()))°")
+                    }
+                    if let humidity = weather.relativeHumidityPercent {
+                        metricRow("相对湿度", "\(Int(humidity.rounded()))%")
+                    }
+                    if let windSpeed = weather.windSpeedKilometersPerHour {
+                        metricRow("风速", weatherWindText(weather, speed: windSpeed))
+                    }
+                    metricRow(
+                        "记录时间",
+                        weather.capturedAt.formatted(
+                            date: .omitted,
+                            time: .shortened
+                        )
+                    )
+                    if let sourceURL = appState.weatherAttributionURL {
+                        Link(destination: sourceURL) {
+                            Label("Apple 天气数据来源", systemImage: "info.circle")
+                        }
+                    }
+                }
+            }
+
+            Section("心率") {
+                if heartRateSamples.count > 1 {
                     RideMetricChart(
                         samples: heartRateSamples,
                         unit: "bpm",
                         color: .red
                     )
+                } else {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Label("这条记录还没有心率采样", systemImage: "heart.slash")
+                            .font(.headline)
+                        Text(heartRateUnavailableMessage)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+
+                        Button {
+                            Task {
+                                await appState.importHealthKitRides(
+                                    since: ride.startedAt.addingTimeInterval(-10 * 60)
+                                )
+                                await appState.syncRides()
+                            }
+                        } label: {
+                            if appState.isImportingHealthKit {
+                                ProgressView("正在读取苹果健身")
+                            } else {
+                                Label("从苹果健身补全本次数据", systemImage: "heart.text.square")
+                            }
+                        }
+                        .disabled(appState.isImportingHealthKit)
+
+                        if let message = appState.healthKitImportMessage {
+                            Text(message)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(.vertical, 6)
                 }
             }
 
@@ -138,6 +211,36 @@ struct RideDetailView: View {
             }
         }
         .navigationTitle(ride.title)
+        .onAppear {
+            guard !hasStartedRoutePlayback else { return }
+            hasStartedRoutePlayback = true
+            startRoutePlayback()
+        }
+        .task(id: routePlaybackToken) {
+            guard let startedAt = routePlaybackStartedAt else { return }
+            let token = routePlaybackToken
+            do {
+                try await Task.sleep(for: .seconds(routePlaybackDuration))
+            } catch {
+                return
+            }
+            guard token == routePlaybackToken,
+                  routePlaybackStartedAt == startedAt else { return }
+            routePlaybackStartedAt = nil
+        }
+    }
+
+    private var routePlaybackDuration: TimeInterval {
+        AnimatedRideRouteMap.playbackDuration(for: coordinates)
+    }
+
+    private func startRoutePlayback() {
+        guard coordinates.count > 1 else {
+            routePlaybackStartedAt = nil
+            return
+        }
+        routePlaybackStartedAt = Date()
+        routePlaybackToken = UUID()
     }
 
     private func metricRow(_ title: String, _ value: String) -> some View {
@@ -147,6 +250,19 @@ struct RideDetailView: View {
             Text(value)
                 .foregroundStyle(.secondary)
         }
+    }
+
+    private func weatherWindText(
+        _ weather: RideWeatherSnapshot,
+        speed: Double
+    ) -> String {
+        guard let degrees = weather.windDirectionDegrees else {
+            return String(format: "%.0f km/h", speed)
+        }
+        let directions = ["北", "东北", "东", "东南", "南", "西南", "西", "西北"]
+        let normalized = degrees.truncatingRemainder(dividingBy: 360)
+        let index = Int(((normalized + 22.5) / 45).rounded(.down)) % directions.count
+        return String(format: "%@风 %.0f km/h", directions[index], speed)
     }
 
     private func durationText(_ duration: TimeInterval) -> String {
@@ -167,6 +283,138 @@ struct RideDetailView: View {
             "Apple Watch / 苹果健身"
         case .merged:
             "Apple Watch + BikeGoGo"
+        }
+    }
+
+    private var heartRateUnavailableMessage: String {
+        switch ride.source {
+        case .iPhone:
+            "当前是手机记录。若苹果健身中有同一时间的户外单车训练，可以读取 Apple Watch 心率并自动合并。"
+        case .appleWatch, .merged:
+            "苹果健身没有返回这次训练的心率采样，请检查 BikeGoGo 的健康读取权限。"
+        }
+    }
+}
+
+private struct AnimatedRideRouteMap: View {
+    let coordinates: [CLLocationCoordinate2D]
+    let camera: MapCameraPosition
+    let playbackStartedAt: Date?
+    let playbackDuration: TimeInterval
+    let onReplay: () -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var sampledCoordinates: [CLLocationCoordinate2D] {
+        Self.sampledCoordinates(from: coordinates)
+    }
+
+    static func playbackDuration(
+        for coordinates: [CLLocationCoordinate2D]
+    ) -> TimeInterval {
+        min(max(Double(sampledCoordinates(from: coordinates).count) / 45, 5), 14)
+    }
+
+    private static func sampledCoordinates(
+        from coordinates: [CLLocationCoordinate2D]
+    ) -> [CLLocationCoordinate2D] {
+        guard coordinates.count > 700 else { return coordinates }
+        let step = max(coordinates.count / 700, 1)
+        var sampled = coordinates.enumerated().compactMap { index, coordinate in
+            index.isMultiple(of: step) ? coordinate : nil
+        }
+        if let last = coordinates.last,
+           sampled.last?.latitude != last.latitude
+            || sampled.last?.longitude != last.longitude {
+            sampled.append(last)
+        }
+        return sampled
+    }
+
+    var body: some View {
+        TimelineView(.animation(
+            minimumInterval: 1 / 24,
+            paused: playbackStartedAt == nil
+        )) { context in
+            let progress = reduceMotion ? 1 : playbackStartedAt.map {
+                min(max(context.date.timeIntervalSince($0) / playbackDuration, 0), 1)
+            } ?? 1
+            let visibleCoordinates = coordinates(through: progress)
+
+            Map(initialPosition: camera) {
+                if visibleCoordinates.count > 1 {
+                    MapPolyline(coordinates: visibleCoordinates)
+                        .stroke(
+                            Color(red: 0.10, green: 0.78, blue: 0.38),
+                            style: StrokeStyle(
+                                lineWidth: 6,
+                                lineCap: .round,
+                                lineJoin: .round
+                            )
+                        )
+                }
+
+                if let coordinate = visibleCoordinates.last {
+                    Annotation("", coordinate: coordinate) {
+                        CartoonCyclistMarker(isMoving: progress < 1)
+                    }
+                }
+            }
+            .overlay(alignment: .topTrailing) {
+                Button(action: onReplay) {
+                    Image(systemName: "arrow.counterclockwise")
+                        .font(.headline)
+                        .frame(width: 42, height: 42)
+                        .background(.regularMaterial, in: Circle())
+                }
+                .buttonStyle(.plain)
+                .padding(10)
+                .accessibilityLabel("重播骑行轨迹")
+                .help("重播骑行轨迹")
+            }
+        }
+    }
+
+    private func coordinates(through progress: Double) -> [CLLocationCoordinate2D] {
+        guard sampledCoordinates.count > 1 else { return sampledCoordinates }
+        let position = progress * Double(sampledCoordinates.count - 1)
+        let completedIndex = min(Int(position.rounded(.down)), sampledCoordinates.count - 1)
+        var result = Array(sampledCoordinates.prefix(completedIndex + 1))
+        guard completedIndex + 1 < sampledCoordinates.count else { return result }
+
+        let fraction = position - Double(completedIndex)
+        let start = sampledCoordinates[completedIndex]
+        let end = sampledCoordinates[completedIndex + 1]
+        result.append(CLLocationCoordinate2D(
+            latitude: start.latitude + (end.latitude - start.latitude) * fraction,
+            longitude: start.longitude + (end.longitude - start.longitude) * fraction
+        ))
+        return result
+    }
+}
+
+private struct CartoonCyclistMarker: View {
+    let isMoving: Bool
+    @State private var pedalPulse = false
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(Color(red: 0.05, green: 0.45, blue: 0.40))
+            Circle()
+                .stroke(.white, lineWidth: 3)
+            Image(systemName: "figure.outdoor.cycle")
+                .font(.system(size: 19, weight: .bold))
+                .foregroundStyle(.white)
+                .scaleEffect(isMoving && pedalPulse ? 1.10 : 0.96)
+        }
+        .frame(width: 42, height: 42)
+        .shadow(color: .black.opacity(0.28), radius: 5, y: 3)
+        .accessibilityHidden(true)
+        .onAppear {
+            withAnimation(.easeInOut(duration: 0.34).repeatForever(autoreverses: true)) {
+                pedalPulse = true
+            }
         }
     }
 }

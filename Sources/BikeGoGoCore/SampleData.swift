@@ -29,7 +29,19 @@ public enum SampleData {
             startedAt: start,
             endedAt: start.addingTimeInterval(180),
             points: points,
-            metrics: RideStatisticsCalculator.metrics(for: points)
+            metrics: RideStatisticsCalculator.metrics(for: points),
+            weather: RideWeatherSnapshot(
+                temperatureCelsius: 24,
+                apparentTemperatureCelsius: 25,
+                relativeHumidityPercent: 58,
+                windSpeedKilometersPerHour: 12,
+                windDirectionDegrees: 135,
+                conditionText: "局部多云",
+                symbolName: "cloud.sun.fill",
+                capturedAt: start,
+                latitude: 31.2304,
+                longitude: 121.4737
+            )
         )
     }
 
