@@ -84,7 +84,8 @@ const publicRide = (ride: RideRecord) => ({
   startedAt: ride.startedAt,
   endedAt: ride.endedAt,
   points: ride.points,
-  metrics: ride.metrics
+  metrics: ride.metrics,
+  weather: ride.weather
 });
 
 const publicVoiceInvitation = (
@@ -900,6 +901,18 @@ export async function createApp(config: AppConfig) {
     averageCyclingPowerWatts: z.number().min(0).max(5_000).optional(),
     maxCyclingPowerWatts: z.number().min(0).max(5_000).optional()
   });
+  const rideWeatherSchema = z.object({
+    temperatureCelsius: z.number().min(-100).max(70),
+    apparentTemperatureCelsius: z.number().min(-120).max(80).optional(),
+    relativeHumidityPercent: z.number().min(0).max(100).optional(),
+    windSpeedKilometersPerHour: z.number().min(0).max(500).optional(),
+    windDirectionDegrees: z.number().min(0).max(360).optional(),
+    conditionText: z.string().trim().min(1).max(80),
+    symbolName: z.string().trim().min(1).max(100),
+    capturedAt: isoDate,
+    latitude: z.number().min(-90).max(90),
+    longitude: z.number().min(-180).max(180)
+  });
   const rideSchema = z.object({
     id: z.string().uuid(),
     title: z.string().trim().min(1).max(80),
@@ -908,7 +921,8 @@ export async function createApp(config: AppConfig) {
     startedAt: isoDate,
     endedAt: isoDate.optional(),
     points: z.array(ridePointSchema).max(100_000),
-    metrics: rideMetricsSchema
+    metrics: rideMetricsSchema,
+    weather: rideWeatherSchema.optional()
   });
   const rideParamsSchema = z.object({ rideId: z.string().uuid() });
 

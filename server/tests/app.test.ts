@@ -1086,6 +1086,18 @@ test("finished rides sync per account and survive reload", async () => {
         maxCadenceRPM: 104,
         averageCyclingPowerWatts: 168,
         maxCyclingPowerWatts: 412
+      },
+      weather: {
+        temperatureCelsius: 27.4,
+        apparentTemperatureCelsius: 29.1,
+        relativeHumidityPercent: 62,
+        windSpeedKilometersPerHour: 13.5,
+        windDirectionDegrees: 90,
+        conditionText: "局部多云",
+        symbolName: "cloud.sun.fill",
+        capturedAt: "2026-07-27T01:00:00.000Z",
+        latitude: 31.2304,
+        longitude: 121.4737
       }
     };
 
@@ -1097,6 +1109,7 @@ test("finished rides sync per account and survive reload", async () => {
     });
     assert.equal(upload.statusCode, 200);
     assert.equal(upload.json().ride.metrics.distanceMeters, 18_000);
+    assert.equal(upload.json().ride.weather.conditionText, "局部多云");
 
     const otherRead = await app.inject({
       method: "GET",
@@ -1120,6 +1133,7 @@ test("finished rides sync per account and survive reload", async () => {
     assert.equal(list.json().rides[0].metrics.activeEnergyKilocalories, 712);
     assert.equal(list.json().rides[0].metrics.averageCadenceRPM, 81);
     assert.equal(list.json().rides[0].metrics.maxCyclingPowerWatts, 412);
+    assert.equal(list.json().rides[0].weather.temperatureCelsius, 27.4);
 
     const deletion = await app.inject({
       method: "DELETE",

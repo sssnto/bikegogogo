@@ -18,8 +18,24 @@ com.sssnto.BikeGoGo.watchkitapp
 ```
 
 iOS App ID 开启 `Sign in with Apple`、`HealthKit` 和 `Push Notifications`；Watch App ID
-开启 `HealthKit`。修改 capability 后回到 Xcode，让 Automatic Signing 重新生成
+开启 `HealthKit` 和 `WeatherKit`。修改 capability 后回到 Xcode，让 Automatic Signing 重新生成
 provisioning profile。
+
+### WeatherKit 开通
+
+天气由 iPhone 直接请求 Apple WeatherKit，不需要天气 API Key，也不需要在 NAS 配置天气
+服务。首次发布包含天气能力的版本前：
+
+1. 登录 Apple Developer，进入 `Certificates, Identifiers & Profiles`。
+2. 打开 `Identifiers`，选择 App ID `com.sssnto.BikeGoGo`。
+3. 在 Capabilities 中勾选 `WeatherKit`，点击 `Save`。
+4. 回到 Xcode，选择 `BikeGoGo` target 的 `Signing & Capabilities`，确认 Team 为正式团队。
+5. 若仍提示 profile 不含 WeatherKit，打开 Xcode `Settings > Accounts`，选择团队并点击
+   `Download Manual Profiles`，然后执行 `Product > Clean Build Folder`。
+
+Apple Watch target 不需要单独开启 WeatherKit；天气在 iPhone 获取，并随骑行记录同步。
+后端不需要新增环境变量，但要更新到包含可选 `weather` 骑行字段的镜像，才能在多设备
+同步时保留天气快照。
 
 ## 2. 打开现有 Xcode 工程
 

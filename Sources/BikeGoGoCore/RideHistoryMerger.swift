@@ -60,6 +60,9 @@ public enum RideHistoryMerger {
         if imported.points.isEmpty, !existing.points.isEmpty {
             result.points = existing.points
         }
+        if imported.weather == nil {
+            result.weather = existing.weather
+        }
 
         var metrics = imported.metrics
         if metrics.distanceMeters <= 0 {

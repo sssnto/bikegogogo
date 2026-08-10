@@ -88,6 +88,18 @@ export type RideRecord = {
   endedAt?: string;
   points: RidePointRecord[];
   metrics: RideMetricsRecord;
+  weather?: {
+    temperatureCelsius: number;
+    apparentTemperatureCelsius?: number;
+    relativeHumidityPercent?: number;
+    windSpeedKilometersPerHour?: number;
+    windDirectionDegrees?: number;
+    conditionText: string;
+    symbolName: string;
+    capturedAt: string;
+    latitude: number;
+    longitude: number;
+  };
   createdAt: string;
   updatedAt: string;
 };

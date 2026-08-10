@@ -14,7 +14,16 @@ import Testing
         startedAt: start,
         endedAt: start.addingTimeInterval(3_600),
         points: [RidePoint(latitude: 39, longitude: 116, timestamp: start)],
-        metrics: RideMetrics(distanceMeters: 20_000, elapsedDurationSeconds: 3_600)
+        metrics: RideMetrics(distanceMeters: 20_000, elapsedDurationSeconds: 3_600),
+        weather: RideWeatherSnapshot(
+            temperatureCelsius: 26,
+            relativeHumidityPercent: 65,
+            conditionText: "晴",
+            symbolName: "sun.max.fill",
+            capturedAt: start,
+            latitude: 39,
+            longitude: 116
+        )
     )
     let healthKit = RideSession(
         title: "户外单车",
@@ -36,6 +45,7 @@ import Testing
     #expect(result[0].id == localID)
     #expect(result[0].source == .merged)
     #expect(result[0].points == local.points)
+    #expect(result[0].weather == local.weather)
     #expect(result[0].metrics.averageHeartRate == 132)
     #expect(result[0].metrics.activeEnergyKilocalories == 510)
 }
@@ -61,4 +71,16 @@ import Testing
     let result = RideHistoryMerger.merging(existing: [morning], imported: [evening])
 
     #expect(result.count == 2)
+}
+
+@Test func rideWeatherRemainsOptionalForLegacyRideData() throws {
+    let ride = RideSession(
+        title: "旧骑行",
+        state: .finished,
+        startedAt: Date(timeIntervalSince1970: 2_000)
+    )
+    let data = try JSONEncoder().encode(ride)
+    let decoded = try JSONDecoder().decode(RideSession.self, from: data)
+
+    #expect(decoded.weather == nil)
 }

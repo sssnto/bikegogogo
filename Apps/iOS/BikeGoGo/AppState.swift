@@ -69,7 +69,12 @@ final class AppState: ObservableObject {
     @Published private(set) var currentSpeedMetersPerSecond = 0.0
     @Published private(set) var locationAccuracyMeters: Double?
     @Published private(set) var currentReliableLocation: RidePoint?
+    @Published private(set) var currentWeather: RideWeatherSnapshot?
+    @Published private(set) var isRefreshingWeather = false
+    @Published private(set) var weatherMessage: String?
+    @Published private(set) var weatherAttributionURL: URL?
     @Published private(set) var isWaitingForAccurateLocation = false
+    @Published private(set) var isAutomaticallyPaused = false
     @Published private(set) var watchHeartRate = 0.0
     @Published var rideAlertMessage: String?
     @Published private(set) var isSyncingRides = false
@@ -106,6 +111,7 @@ final class AppState: ObservableObject {
     let watchBridge = WatchSessionBridge()
     private let watchWorkoutLauncher = WatchWorkoutLauncher()
     private let healthKitRideImporter = HealthKitRideImporter()
+    private let rideWeatherService = RideWeatherService()
     private let voiceTokenService = VoiceTokenService()
     private let groupLiveLocationService = GroupLiveLocationService()
     private let localUserID: String
@@ -117,6 +123,8 @@ final class AppState: ObservableObject {
     private var latestWatchCadenceRPM = 0.0
     private var latestWatchCyclingPowerWatts = 0.0
     private var healthKitRefreshTask: Task<Void, Never>?
+    private var autoPauseEvaluationTask: Task<Void, Never>?
+    private var autoPauseMonitor = RideAutoPauseMonitor()
     private var recorderNeedsRestart = false
     private var activeVoiceInvitationID: String?
     private var locationSharingRefreshTask: Task<Void, Never>?
@@ -271,8 +279,29 @@ final class AppState: ObservableObject {
             Task { @MainActor in
                 guard let self else { return }
                 self.currentReliableLocation = point
+                if self.currentRide.weather == nil {
+                    await self.refreshWeather(at: point)
+                }
                 await self.publishRideLocationIfNeeded(point)
                 await self.evaluateMeetingPointArrival(point)
+            }
+        }
+        rideRecorder.onCurrentLocationChanged = { [weak self] point in
+            Task { @MainActor in
+                guard let self else { return }
+                self.currentReliableLocation = point
+                await self.refreshWeather(at: point)
+            }
+        }
+        rideRecorder.onMotionChanged = {
+            [weak self] speed, horizontalAccuracy, speedAccuracy, timestamp in
+            Task { @MainActor in
+                self?.handleRideMotion(
+                    speedMetersPerSecond: speed,
+                    horizontalAccuracyMeters: horizontalAccuracy,
+                    speedAccuracyMetersPerSecond: speedAccuracy,
+                    at: timestamp
+                )
             }
         }
 
@@ -311,6 +340,12 @@ final class AppState: ObservableObject {
 
     func requestRidePermissions() {
         rideRecorder.requestAuthorization()
+        rideRecorder.requestCurrentLocation()
+    }
+
+    func refreshRideWeather() {
+        weatherMessage = nil
+        rideRecorder.requestCurrentLocation()
     }
 
     func startRide() {
@@ -336,15 +371,20 @@ final class AppState: ObservableObject {
         watchHeartRate = 0
         latestWatchCadenceRPM = 0
         latestWatchCyclingPowerWatts = 0
+        isAutomaticallyPaused = false
+        autoPauseMonitor.reset()
+        autoPauseEvaluationTask?.cancel()
         recorderNeedsRestart = false
         currentReliableLocation = nil
         currentRide = RideSession(
             title: "本次骑行",
             state: .recording,
             source: .iPhone,
-            startedAt: now
+            startedAt: now,
+            weather: usableWeatherSnapshot(at: now)
         )
         rideRecorder.start()
+        rideRecorder.requestCurrentLocation()
         watchBridge.sendRideState(.recording)
         Task {
             do {
@@ -361,12 +401,16 @@ final class AppState: ObservableObject {
         }
     }
 
-    func pauseRide() {
+    func pauseRide(automatically: Bool = false) {
+        guard currentRide.state == .recording else { return }
         activeElapsedSeconds = rideElapsedDuration()
         activeSegmentStartedAt = nil
         currentRide.state = .paused
+        isAutomaticallyPaused = automatically
+        autoPauseMonitor.reset()
+        autoPauseEvaluationTask?.cancel()
         currentRide.metrics.elapsedDurationSeconds = activeElapsedSeconds
-        rideRecorder.pause()
+        rideRecorder.pause(keepingMotionUpdates: automatically)
         watchBridge.sendRideState(.paused)
         Task {
             await persistActiveRide()
@@ -374,8 +418,12 @@ final class AppState: ObservableObject {
     }
 
     func resumeRide() {
+        guard currentRide.state == .paused else { return }
         activeSegmentStartedAt = Date()
         currentRide.state = .recording
+        isAutomaticallyPaused = false
+        autoPauseMonitor.reset()
+        autoPauseEvaluationTask?.cancel()
         if recorderNeedsRestart {
             rideRecorder.start(keepingExistingPoints: true)
             recorderNeedsRestart = false
@@ -398,6 +446,9 @@ final class AppState: ObservableObject {
         currentRide.metrics = RideStatisticsCalculator.metrics(for: currentRide.points)
         currentRide.metrics.elapsedDurationSeconds = activeElapsedSeconds
         rideRecorder.stop()
+        isAutomaticallyPaused = false
+        autoPauseMonitor.reset()
+        autoPauseEvaluationTask?.cancel()
         currentReliableLocation = nil
 
         if !currentRide.points.isEmpty {
@@ -414,10 +465,65 @@ final class AppState: ObservableObject {
         watchBridge.sendRideState(.finished)
         scheduleHealthKitRefresh(forRideStartedAt: finishedRideStartedAt)
         clearReferenceRoute()
+        rideRecorder.requestCurrentLocation()
+    }
+
+    private func refreshWeather(at point: RidePoint) async {
+        let location = CLLocation(
+            latitude: point.latitude,
+            longitude: point.longitude
+        )
+        if let currentWeather,
+           Date().timeIntervalSince(currentWeather.capturedAt) < 20 * 60 {
+            let weatherLocation = CLLocation(
+                latitude: currentWeather.latitude,
+                longitude: currentWeather.longitude
+            )
+            if location.distance(from: weatherLocation) < 10_000 {
+                attachWeatherToActiveRideIfNeeded(currentWeather)
+                return
+            }
+        }
+
+        guard !isRefreshingWeather else { return }
+        isRefreshingWeather = true
+        defer { isRefreshingWeather = false }
+        do {
+            let reading = try await rideWeatherService.weather(at: point)
+            currentWeather = reading.snapshot
+            weatherAttributionURL = reading.legalPageURL
+            weatherMessage = nil
+            attachWeatherToActiveRideIfNeeded(reading.snapshot)
+        } catch {
+            weatherMessage = "天气暂时无法更新"
+            print("Refreshing WeatherKit weather failed: \(error.localizedDescription)")
+        }
+    }
+
+    private func attachWeatherToActiveRideIfNeeded(
+        _ weather: RideWeatherSnapshot
+    ) {
+        guard currentRide.state == .recording || currentRide.state == .paused,
+              currentRide.weather == nil else { return }
+        currentRide.weather = weather
+        Task {
+            await persistActiveRide()
+        }
+    }
+
+    private func usableWeatherSnapshot(at date: Date) -> RideWeatherSnapshot? {
+        guard let currentWeather,
+              abs(date.timeIntervalSince(currentWeather.capturedAt)) <= 60 * 60 else {
+            return nil
+        }
+        return currentWeather
     }
 
     func discardCurrentRide() {
         rideRecorder.stop()
+        isAutomaticallyPaused = false
+        autoPauseMonitor.reset()
+        autoPauseEvaluationTask?.cancel()
         currentReliableLocation = nil
         currentRide = RideSession(
             title: "准备开始骑行",
@@ -1151,23 +1257,24 @@ final class AppState: ObservableObject {
 
         do {
             try await healthKitRideImporter.requestAuthorization()
-            let imported: [RideSession]
+            let importResult: HealthKitRideImporter.ImportResult
             if let startDate {
-                imported = try await healthKitRideImporter.importOutdoorCyclingRides(
+                importResult = try await healthKitRideImporter.importOutdoorCyclingRides(
                     since: startDate
                 )
             } else {
-                imported = try await healthKitRideImporter.importOutdoorCyclingRides()
+                importResult = try await healthKitRideImporter.importOutdoorCyclingRides()
             }
+            let imported = importResult.rides
             recentRides = RideHistoryMerger.merging(
                 existing: recentRides,
                 imported: imported
             )
             try await rideStore.saveRides(recentRides)
             lastHealthKitImportAt = Date()
-            healthKitImportMessage = imported.isEmpty
-                ? "苹果健身中暂未发现可导入的户外单车训练。"
-                : "已从苹果健身更新 \(imported.count) 条户外单车训练。"
+            healthKitImportMessage = importResult.discoveredWorkoutCount == 0
+                ? "Apple 健康没有返回户外单车训练。请在健康权限中允许 BikeGoGo 读取体能训练、心率和路线。"
+                : "Apple 健康读取到 \(importResult.discoveredWorkoutCount) 条户外单车训练，已全部更新。"
         } catch {
             if presentsErrors {
                 healthKitImportMessage = "无法读取苹果健身数据，请检查健康权限后重试。"
@@ -1207,6 +1314,8 @@ final class AppState: ObservableObject {
                     RideStatisticsCalculator.metrics(for: activeRide.points).elapsedDurationSeconds
                 )
                 recorderNeedsRestart = true
+                isAutomaticallyPaused = false
+                autoPauseMonitor.reset()
                 rideAlertMessage = "发现一条未结束的骑行记录，已为你暂停。可以继续骑行或结束保存。"
             }
         } catch {
@@ -1228,6 +1337,58 @@ final class AppState: ObservableObject {
             try await rideStore.saveActiveRide(currentRide)
         } catch {
             print("Saving active ride failed: \(error.localizedDescription)")
+        }
+    }
+
+    private func handleRideMotion(
+        speedMetersPerSecond: Double,
+        horizontalAccuracyMeters: Double,
+        speedAccuracyMetersPerSecond: Double?,
+        at date: Date
+    ) {
+        guard currentRide.state == .recording
+                || currentRide.state == .paused && isAutomaticallyPaused else {
+            return
+        }
+
+        let action = autoPauseMonitor.observe(
+            speedMetersPerSecond: speedMetersPerSecond,
+            horizontalAccuracyMeters: horizontalAccuracyMeters,
+            speedAccuracyMetersPerSecond: speedAccuracyMetersPerSecond,
+            at: date,
+            isAutomaticallyPaused: isAutomaticallyPaused
+        )
+        switch action {
+        case .pause where currentRide.state == .recording:
+            pauseRide(automatically: true)
+        case .resume where currentRide.state == .paused && isAutomaticallyPaused:
+            resumeRide()
+        case .none, .pause, .resume:
+            scheduleAutoPauseEvaluationIfNeeded()
+        }
+    }
+
+    private func scheduleAutoPauseEvaluationIfNeeded() {
+        autoPauseEvaluationTask?.cancel()
+        guard currentRide.state == .recording,
+              let deadline = autoPauseMonitor.pauseDeadline else {
+            return
+        }
+
+        let delay = max(deadline.timeIntervalSinceNow, 0)
+        autoPauseEvaluationTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: .seconds(delay))
+            } catch {
+                return
+            }
+            guard let self, self.currentRide.state == .recording else { return }
+            if self.autoPauseMonitor.evaluate(
+                at: Date(),
+                isAutomaticallyPaused: false
+            ) == .pause {
+                self.pauseRide(automatically: true)
+            }
         }
     }
 

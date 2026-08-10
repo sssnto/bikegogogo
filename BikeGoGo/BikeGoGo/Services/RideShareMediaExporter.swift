@@ -8,6 +8,8 @@ import UIKit
 enum RideShareTemplate: String, CaseIterable, Identifiable {
     case compact
     case stats
+    case fitness
+    case performance
     case milestone
 
     var id: Self { self }
@@ -16,6 +18,8 @@ enum RideShareTemplate: String, CaseIterable, Identifiable {
         switch self {
         case .compact: "简洁"
         case .stats: "数据"
+        case .fitness: "体能"
+        case .performance: "表现"
         case .milestone: "里程"
         }
     }
@@ -235,6 +239,7 @@ struct RideShareDataOverlay: View {
 
                 VStack(alignment: .leading, spacing: width * 0.025) {
                     brandRow(width: width)
+                    weatherRow(width: width)
                     templateContent(width: width)
                 }
                 .padding(.horizontal, width * 0.055)
@@ -255,6 +260,34 @@ struct RideShareDataOverlay: View {
         }
         .font(.system(size: width * 0.035))
         .foregroundStyle(.white.opacity(0.9))
+    }
+
+    @ViewBuilder
+    private func weatherRow(width: CGFloat) -> some View {
+        if let weather = ride.weather {
+            HStack(spacing: width * 0.025) {
+                Label(
+                    "\(Int(weather.temperatureCelsius.rounded()))° \(weather.conditionText)",
+                    systemImage: weather.symbolName
+                )
+                if let humidity = weather.relativeHumidityPercent {
+                    Label("\(Int(humidity.rounded()))%", systemImage: "humidity.fill")
+                }
+                if let windSpeed = weather.windSpeedKilometersPerHour {
+                    Label(
+                        String(format: "%.0f km/h", windSpeed),
+                        systemImage: "wind"
+                    )
+                }
+                Spacer(minLength: width * 0.01)
+                Text("Apple Weather")
+                    .foregroundStyle(.white.opacity(0.65))
+            }
+            .font(.system(size: width * 0.03, weight: .semibold))
+            .foregroundStyle(.white.opacity(0.9))
+            .lineLimit(1)
+            .minimumScaleFactor(0.65)
+        }
     }
 
     @ViewBuilder
@@ -315,6 +348,84 @@ struct RideShareDataOverlay: View {
             .font(.system(size: width * 0.035, weight: .semibold))
             .foregroundStyle(.white.opacity(0.88))
 
+        case .fitness:
+            Text("体能训练")
+                .font(.system(size: width * 0.052, weight: .bold))
+            HStack(spacing: width * 0.04) {
+                valueBlock(
+                    title: "动态热量",
+                    value: optionalNumber(ride.metrics.activeEnergyKilocalories, format: "%.0f"),
+                    unit: "kcal",
+                    width: width,
+                    emphasized: true
+                )
+                valueBlock(
+                    title: "平均心率",
+                    value: ride.metrics.averageHeartRate.map(String.init) ?? "--",
+                    unit: "bpm",
+                    width: width,
+                    emphasized: false
+                )
+                valueBlock(
+                    title: "最高心率",
+                    value: ride.metrics.maxHeartRate.map(String.init) ?? "--",
+                    unit: "bpm",
+                    width: width,
+                    emphasized: false
+                )
+            }
+            HStack(spacing: width * 0.025) {
+                Label(durationText(ride.metrics.movingDurationSeconds), systemImage: "figure.outdoor.cycle")
+                if let totalEnergy = ride.metrics.totalEnergyKilocalories {
+                    Label(String(format: "%.0f kcal 总消耗", totalEnergy), systemImage: "flame.fill")
+                }
+                Label(String(format: "%.0f m", ride.metrics.elevationGainMeters), systemImage: "mountain.2.fill")
+            }
+            .font(.system(size: width * 0.032, weight: .semibold))
+            .foregroundStyle(.white.opacity(0.88))
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+
+        case .performance:
+            Text("骑行表现")
+                .font(.system(size: width * 0.052, weight: .bold))
+            HStack(spacing: width * 0.04) {
+                valueBlock(
+                    title: "平均速度",
+                    value: String(format: "%.1f", ride.metrics.averageSpeedKilometersPerHour),
+                    unit: "km/h",
+                    width: width,
+                    emphasized: true
+                )
+                valueBlock(
+                    title: "最高速度",
+                    value: String(format: "%.1f", ride.metrics.maxSpeedKilometersPerHour),
+                    unit: "km/h",
+                    width: width,
+                    emphasized: false
+                )
+                valueBlock(
+                    title: "累计爬升",
+                    value: String(format: "%.0f", ride.metrics.elevationGainMeters),
+                    unit: "m",
+                    width: width,
+                    emphasized: false
+                )
+            }
+            HStack(spacing: width * 0.025) {
+                Label(String(format: "%.2f km", ride.metrics.distanceKilometers), systemImage: "point.topleft.down.to.point.bottomright.curvepath")
+                if let cadence = ride.metrics.averageCadenceRPM {
+                    Label(String(format: "%.0f rpm", cadence), systemImage: "repeat")
+                }
+                if let power = ride.metrics.averageCyclingPowerWatts {
+                    Label(String(format: "%.0f W", power), systemImage: "bolt.fill")
+                }
+            }
+            .font(.system(size: width * 0.032, weight: .semibold))
+            .foregroundStyle(.white.opacity(0.88))
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+
         case .milestone:
             Text("本次骑行")
                 .font(.system(size: width * 0.045, weight: .semibold))
@@ -370,6 +481,11 @@ struct RideShareDataOverlay: View {
         }
         return String(format: "%02d:%02d", minutes, seconds)
     }
+
+    private func optionalNumber(_ value: Double?, format: String) -> String {
+        guard let value else { return "--" }
+        return String(format: format, value)
+    }
 }
 
 private struct RideShareRouteBadge: View {
@@ -405,10 +521,12 @@ private struct RideShareRouteBadge: View {
                     Path(ellipseIn: markerRect(at: route[0], size: markerSize)),
                     with: .color(Color(red: 0.20, green: 0.90, blue: 0.48))
                 )
-                context.fill(
-                    Path(ellipseIn: markerRect(at: route[route.count - 1], size: markerSize)),
-                    with: .color(Color(red: 1, green: 0.28, blue: 0.30))
-                )
+                if let cyclist = context.resolveSymbol(id: "cyclist") {
+                    context.draw(cyclist, at: route[route.count - 1], anchor: .center)
+                }
+            } symbols: {
+                ShareCyclistMarker()
+                    .tag("cyclist")
             }
         }
         .padding(10)
@@ -483,5 +601,21 @@ private struct RideShareRouteBadge: View {
             width: size,
             height: size
         )
+    }
+}
+
+private struct ShareCyclistMarker: View {
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(Color(red: 0.05, green: 0.45, blue: 0.40))
+            Circle()
+                .stroke(.white, lineWidth: 2)
+            Image(systemName: "figure.outdoor.cycle")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(.white)
+        }
+        .frame(width: 28, height: 28)
+        .shadow(color: .black.opacity(0.25), radius: 3, y: 2)
     }
 }
