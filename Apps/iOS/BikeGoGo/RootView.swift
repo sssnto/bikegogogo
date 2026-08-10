@@ -28,6 +28,13 @@ struct RootView: View {
                     Label("历史", systemImage: "clock.arrow.circlepath")
                 }
         }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if appState.hasActiveVoiceCall,
+               appState.incomingVoiceInvitation == nil {
+                VoiceCallStatusBar()
+                    .environmentObject(appState)
+            }
+        }
         .fullScreenCover(
             isPresented: Binding(
                 get: { appState.incomingVoiceInvitation != nil },
@@ -79,6 +86,86 @@ struct RootView: View {
             URLQueryItem(name: "q", value: "\(event.senderName) 的求助位置")
         ]
         return components.url
+    }
+}
+
+private struct VoiceCallStatusBar: View {
+    @EnvironmentObject private var appState: AppState
+
+    private var tint: Color {
+        switch appState.voiceCallPhase {
+        case .connected:
+            .green
+        case .reconnecting:
+            .yellow
+        case .idle:
+            .secondary
+        case .preparing, .calling, .connecting, .syncingAudio, .waitingForParticipants:
+            .orange
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(tint.opacity(0.16))
+                    .frame(width: 36, height: 36)
+                if appState.voiceCallPhase.showsProgress {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(tint)
+                } else {
+                    Image(systemName: appState.voiceCallPhase.systemImage)
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(tint)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(appState.voiceCallPhase.title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(tint)
+                Text(appState.voiceCallStatusDetail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 4)
+
+            if appState.voiceClient.isConnected {
+                Button {
+                    Task { await appState.toggleMute() }
+                } label: {
+                    Image(systemName: appState.voiceClient.isMuted ? "mic.slash.fill" : "mic.fill")
+                        .frame(width: 36, height: 36)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(appState.voiceClient.isMuted ? .orange : .primary)
+                .accessibilityLabel(appState.voiceClient.isMuted ? "解除静音" : "静音")
+            }
+
+            Button {
+                Task { await appState.leaveVoiceRoom() }
+            } label: {
+                Image(systemName: "phone.down.fill")
+                    .frame(width: 36, height: 36)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.red)
+            .disabled(appState.voiceCallPhase == .preparing)
+            .accessibilityLabel(
+                appState.voiceCallPhase == .connected ? "结束语音" : "取消呼叫"
+            )
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(.bar)
+        .overlay(alignment: .bottom) {
+            Divider()
+        }
+        .animation(.easeInOut(duration: 0.2), value: appState.voiceCallPhase)
     }
 }
 

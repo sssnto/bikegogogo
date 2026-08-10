@@ -3,6 +3,57 @@ import Combine
 import CoreLocation
 import Foundation
 
+enum VoiceCallPhase: Equatable {
+    case idle
+    case preparing
+    case calling
+    case connecting
+    case syncingAudio
+    case connected
+    case reconnecting
+    case waitingForParticipants
+
+    var title: String {
+        switch self {
+        case .idle: "未连接语音"
+        case .preparing: "正在准备呼叫"
+        case .calling: "正在呼叫"
+        case .connecting: "正在建立连接"
+        case .syncingAudio: "正在同步音频"
+        case .connected: "语音已连接"
+        case .reconnecting: "网络波动，正在重连"
+        case .waitingForParticipants: "等待对方加入"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .idle: "phone"
+        case .preparing, .calling: "phone.fill"
+        case .connecting, .reconnecting: "arrow.clockwise"
+        case .syncingAudio: "waveform"
+        case .connected: "checkmark.circle.fill"
+        case .waitingForParticipants: "person.2.fill"
+        }
+    }
+
+    var showsProgress: Bool {
+        switch self {
+        case .preparing, .calling, .connecting, .syncingAudio, .reconnecting:
+            true
+        case .idle, .connected, .waitingForParticipants:
+            false
+        }
+    }
+}
+
+struct ActiveVoiceCallContext: Equatable {
+    var targetID: String
+    var targetName: String
+    var isGroupCall: Bool
+    var isOutgoing: Bool
+}
+
 @MainActor
 final class AppState: ObservableObject {
     @Published var currentRide = RideSession(
@@ -24,8 +75,12 @@ final class AppState: ObservableObject {
     @Published private(set) var isSyncingRides = false
     @Published private(set) var rideSyncMessage: String?
     @Published private(set) var lastRideSyncAt: Date?
+    @Published private(set) var isImportingHealthKit = false
+    @Published private(set) var healthKitImportMessage: String?
+    @Published private(set) var lastHealthKitImportAt: Date?
     @Published private(set) var incomingVoiceInvitation: VoiceInvitation?
     @Published private(set) var outgoingVoiceInvitation: VoiceInvitation?
+    @Published private(set) var activeVoiceCallContext: ActiveVoiceCallContext?
     @Published private(set) var isHandlingVoiceInvitation = false
     @Published var voiceCallMessage: String?
     @Published private(set) var isSharingRideLocation = false
@@ -50,6 +105,7 @@ final class AppState: ObservableObject {
     let accountClient = AccountClient()
     let watchBridge = WatchSessionBridge()
     private let watchWorkoutLauncher = WatchWorkoutLauncher()
+    private let healthKitRideImporter = HealthKitRideImporter()
     private let voiceTokenService = VoiceTokenService()
     private let groupLiveLocationService = GroupLiveLocationService()
     private let localUserID: String
@@ -58,6 +114,9 @@ final class AppState: ObservableObject {
     private var pendingStartAfterAuthorization = false
     private var activeElapsedSeconds: TimeInterval = 0
     private var activeSegmentStartedAt: Date?
+    private var latestWatchCadenceRPM = 0.0
+    private var latestWatchCyclingPowerWatts = 0.0
+    private var healthKitRefreshTask: Task<Void, Never>?
     private var recorderNeedsRestart = false
     private var activeVoiceInvitationID: String?
     private var locationSharingRefreshTask: Task<Void, Never>?
@@ -166,11 +225,46 @@ final class AppState: ObservableObject {
         rideRecorder.onPointsChanged = { [weak self] points in
             Task { @MainActor in
                 guard let self else { return }
-                self.currentRide.points = points
-                self.currentRide.metrics = RideStatisticsCalculator.metrics(for: points)
-                self.currentRide.metrics.elapsedDurationSeconds = self.rideElapsedDuration()
+                var enrichedPoints = points
+                if !enrichedPoints.isEmpty {
+                    let lastIndex = enrichedPoints.count - 1
+                    if self.watchHeartRate > 0 {
+                        enrichedPoints[lastIndex].heartRateBeatsPerMinute = Int(
+                            self.watchHeartRate.rounded()
+                        )
+                    }
+                    if self.latestWatchCadenceRPM > 0 {
+                        enrichedPoints[lastIndex].cadenceRPM = Int(
+                            self.latestWatchCadenceRPM.rounded()
+                        )
+                    }
+                    if self.latestWatchCyclingPowerWatts > 0 {
+                        enrichedPoints[lastIndex].cyclingPowerWatts =
+                            self.latestWatchCyclingPowerWatts
+                    }
+                }
+
+                let previousMetrics = self.currentRide.metrics
+                var metrics = RideStatisticsCalculator.metrics(for: enrichedPoints)
+                metrics.elapsedDurationSeconds = self.rideElapsedDuration()
+                metrics.activeEnergyKilocalories = previousMetrics.activeEnergyKilocalories
+                metrics.totalEnergyKilocalories = previousMetrics.totalEnergyKilocalories
+                if metrics.averageHeartRate == nil {
+                    metrics.averageHeartRate = previousMetrics.averageHeartRate
+                    metrics.maxHeartRate = previousMetrics.maxHeartRate
+                }
+                if metrics.averageCadenceRPM == nil {
+                    metrics.averageCadenceRPM = previousMetrics.averageCadenceRPM
+                    metrics.maxCadenceRPM = previousMetrics.maxCadenceRPM
+                }
+                if metrics.averageCyclingPowerWatts == nil {
+                    metrics.averageCyclingPowerWatts = previousMetrics.averageCyclingPowerWatts
+                    metrics.maxCyclingPowerWatts = previousMetrics.maxCyclingPowerWatts
+                }
+                self.currentRide.points = enrichedPoints
+                self.currentRide.metrics = metrics
                 await self.persistActiveRide()
-                await self.evaluateRouteDeviation(points.last)
+                await self.evaluateRouteDeviation(enrichedPoints.last)
             }
         }
         rideRecorder.onReliableLocationChanged = { [weak self] point in
@@ -191,12 +285,16 @@ final class AppState: ObservableObject {
                 await self.voiceClient.setMuted(muted)
             }
         }
-        watchBridge.onWorkoutMetricsReceived = { [weak self] elapsed, distance, heartRate, speed in
+        watchBridge.onWorkoutMetricsReceived = {
+            [weak self] elapsed, distance, heartRate, speed, activeEnergy, cadence, power in
             self?.handleWatchMetrics(
                 elapsed: elapsed,
                 distance: distance,
                 heartRate: heartRate,
-                speed: speed
+                speed: speed,
+                activeEnergy: activeEnergy,
+                cadence: cadence,
+                power: power
             )
         }
 
@@ -235,6 +333,9 @@ final class AppState: ObservableObject {
         let now = Date()
         activeElapsedSeconds = 0
         activeSegmentStartedAt = now
+        watchHeartRate = 0
+        latestWatchCadenceRPM = 0
+        latestWatchCyclingPowerWatts = 0
         recorderNeedsRestart = false
         currentReliableLocation = nil
         currentRide = RideSession(
@@ -246,7 +347,16 @@ final class AppState: ObservableObject {
         rideRecorder.start()
         watchBridge.sendRideState(.recording)
         Task {
-            try? await watchWorkoutLauncher.startOutdoorCycling()
+            do {
+                try await healthKitRideImporter.requestAuthorization()
+            } catch {
+                rideAlertMessage = "苹果健康数据授权失败，本次仍会保留手机骑行记录。"
+            }
+            do {
+                try await watchWorkoutLauncher.startOutdoorCycling()
+            } catch {
+                print("Starting Apple Watch workout failed: \(error.localizedDescription)")
+            }
             await persistActiveRide()
         }
     }
@@ -279,6 +389,7 @@ final class AppState: ObservableObject {
     }
 
     func finishRide() {
+        let finishedRideStartedAt = currentRide.startedAt
         activeElapsedSeconds = rideElapsedDuration()
         activeSegmentStartedAt = nil
         currentRide.state = .finished
@@ -301,6 +412,7 @@ final class AppState: ObservableObject {
             try? await rideStore.clearActiveRide()
         }
         watchBridge.sendRideState(.finished)
+        scheduleHealthKitRefresh(forRideStartedAt: finishedRideStartedAt)
         clearReferenceRoute()
     }
 
@@ -354,6 +466,7 @@ final class AppState: ObservableObject {
         await stopRideLocationSharing()
         incomingVoiceInvitation = nil
         outgoingVoiceInvitation = nil
+        activeVoiceCallContext = nil
         activeVoiceInvitationID = nil
         voiceRoom.isJoined = false
         recentRides = []
@@ -384,6 +497,62 @@ final class AppState: ObservableObject {
         voiceRoom.isJoined = voiceClient.isConnected
     }
 
+    var voiceCallPhase: VoiceCallPhase {
+        if voiceClient.status == .reconnecting {
+            return .reconnecting
+        }
+        if outgoingVoiceInvitation != nil,
+           voiceClient.remoteParticipantCount == 0,
+           !voiceClient.hasHadRemoteParticipant {
+            return .calling
+        }
+        if voiceClient.status == .connecting {
+            return .connecting
+        }
+        if voiceClient.status == .connected {
+            guard voiceClient.remoteParticipantCount > 0 else {
+                return .waitingForParticipants
+            }
+            guard voiceClient.isLocalAudioReady,
+                  voiceClient.remoteAudioReadyCount > 0 else {
+                return .syncingAudio
+            }
+            return .connected
+        }
+        if isHandlingVoiceInvitation || outgoingVoiceInvitation != nil {
+            return .preparing
+        }
+        return .idle
+    }
+
+    var hasActiveVoiceCall: Bool {
+        voiceCallPhase != .idle
+    }
+
+    var voiceCallStatusDetail: String {
+        let targetName = activeVoiceCallContext?.targetName ?? "语音房间"
+        switch voiceCallPhase {
+        case .idle:
+            return "选择好友或小队后发起语音"
+        case .preparing:
+            return "正在创建与\(targetName)的呼叫"
+        case .calling:
+            return "已通知\(targetName)，等待接听"
+        case .connecting:
+            return "正在连接\(targetName)的语音房间"
+        case .syncingAudio:
+            return "已找到对方，正在建立双向音频"
+        case .connected:
+            return "\(targetName) · \(voiceClient.remoteParticipantCount + 1) 人在线"
+        case .reconnecting:
+            return "通话暂未断开，正在恢复网络"
+        case .waitingForParticipants:
+            return voiceClient.hasHadRemoteParticipant
+                ? "\(targetName)已离开，等待重新加入"
+                : "已进入\(targetName)，等待其他成员"
+        }
+    }
+
     func startVoiceCall(targetID: String) async {
         guard let accessToken = accountClient.accessToken else {
             voiceCallMessage = "请先建立 BikeGoGo 账户。"
@@ -395,15 +564,24 @@ final class AppState: ObservableObject {
         defer { isHandlingVoiceInvitation = false }
 
         do {
-            outgoingVoiceInvitation = try await voiceTokenService.createInvitation(
+            let invitation = try await voiceTokenService.createInvitation(
                 targetID: targetID,
                 accessToken: accessToken
+            )
+            outgoingVoiceInvitation = invitation
+            activeVoiceCallContext = ActiveVoiceCallContext(
+                targetID: invitation.targetId,
+                targetName: invitation.targetName,
+                isGroupCall: invitation.isGroupCall,
+                isOutgoing: true
             )
             await joinVoiceRoom(roomID: targetID)
             if !voiceClient.isConnected {
                 await cancelOutgoingVoiceInvitation()
+                activeVoiceCallContext = nil
             }
         } catch {
+            activeVoiceCallContext = nil
             voiceCallMessage = "发起语音失败：\(error.localizedDescription)"
         }
     }
@@ -434,13 +612,21 @@ final class AppState: ObservableObject {
                 action: "accept",
                 accessToken: accessToken
             )
+            activeVoiceCallContext = ActiveVoiceCallContext(
+                targetID: invitation.targetId,
+                targetName: invitation.targetName,
+                isGroupCall: invitation.isGroupCall,
+                isOutgoing: false
+            )
             incomingVoiceInvitation = nil
             activeVoiceInvitationID = invitation.id
             await joinVoiceRoom(roomID: invitation.targetId)
             if !voiceClient.isConnected {
                 activeVoiceInvitationID = nil
+                activeVoiceCallContext = nil
             }
         } catch {
+            activeVoiceCallContext = nil
             voiceCallMessage = "接听失败：\(error.localizedDescription)"
             await refreshIncomingVoiceInvitations()
         }
@@ -473,6 +659,7 @@ final class AppState: ObservableObject {
         await cancelOutgoingVoiceInvitation()
         await voiceClient.leave()
         activeVoiceInvitationID = nil
+        activeVoiceCallContext = nil
         voiceRoom.isJoined = false
     }
 
@@ -902,9 +1089,9 @@ final class AppState: ObservableObject {
     }
 
     private func cancelOutgoingVoiceInvitation() async {
-        guard let invitation = outgoingVoiceInvitation,
-              let accessToken = accountClient.accessToken else { return }
+        guard let invitation = outgoingVoiceInvitation else { return }
         outgoingVoiceInvitation = nil
+        guard let accessToken = accountClient.accessToken else { return }
         try? await voiceTokenService.cancelInvitation(
             invitationID: invitation.id,
             accessToken: accessToken
@@ -921,6 +1108,7 @@ final class AppState: ObservableObject {
             }
             if activeVoiceInvitationID == invitationID {
                 activeVoiceInvitationID = nil
+                activeVoiceCallContext = nil
                 await voiceClient.leave()
                 voiceRoom.isJoined = false
                 voiceCallMessage = "发起方已结束本次语音。"
@@ -947,11 +1135,52 @@ final class AppState: ObservableObject {
         }
     }
 
-    func deleteRide(_ ride: RideSession) async {
-        guard let accessToken = accountClient.accessToken else { return }
+    func refreshRideHistory() async {
+        await importHealthKitRides()
+        await syncRides()
+    }
+
+    func importHealthKitRides(
+        since startDate: Date? = nil,
+        presentsErrors: Bool = true
+    ) async {
+        guard !isImportingHealthKit else { return }
+        isImportingHealthKit = true
+        healthKitImportMessage = nil
+        defer { isImportingHealthKit = false }
 
         do {
-            try await rideCloudClient.delete(rideID: ride.id, accessToken: accessToken)
+            try await healthKitRideImporter.requestAuthorization()
+            let imported: [RideSession]
+            if let startDate {
+                imported = try await healthKitRideImporter.importOutdoorCyclingRides(
+                    since: startDate
+                )
+            } else {
+                imported = try await healthKitRideImporter.importOutdoorCyclingRides()
+            }
+            recentRides = RideHistoryMerger.merging(
+                existing: recentRides,
+                imported: imported
+            )
+            try await rideStore.saveRides(recentRides)
+            lastHealthKitImportAt = Date()
+            healthKitImportMessage = imported.isEmpty
+                ? "苹果健身中暂未发现可导入的户外单车训练。"
+                : "已从苹果健身更新 \(imported.count) 条户外单车训练。"
+        } catch {
+            if presentsErrors {
+                healthKitImportMessage = "无法读取苹果健身数据，请检查健康权限后重试。"
+            }
+            print("Importing HealthKit rides failed: \(error.localizedDescription)")
+        }
+    }
+
+    func deleteRide(_ ride: RideSession) async {
+        do {
+            if let accessToken = accountClient.accessToken {
+                try await rideCloudClient.delete(rideID: ride.id, accessToken: accessToken)
+            }
             recentRides.removeAll { $0.id == ride.id }
             try await rideStore.saveRides(recentRides)
             rideSyncMessage = nil
@@ -1002,6 +1231,23 @@ final class AppState: ObservableObject {
         }
     }
 
+    private func scheduleHealthKitRefresh(forRideStartedAt startDate: Date) {
+        healthKitRefreshTask?.cancel()
+        healthKitRefreshTask = Task { [weak self] in
+            guard let self else { return }
+            let importStartDate = startDate.addingTimeInterval(-10 * 60)
+            for delaySeconds in [8, 35] {
+                try? await Task.sleep(for: .seconds(delaySeconds))
+                guard !Task.isCancelled else { return }
+                await self.importHealthKitRides(
+                    since: importStartDate,
+                    presentsErrors: false
+                )
+            }
+            await self.syncRides()
+        }
+    }
+
     private func handleWatchRideState(_ state: RideState) {
         switch state {
         case .recording:
@@ -1023,13 +1269,27 @@ final class AppState: ObservableObject {
         elapsed: TimeInterval,
         distance: Double,
         heartRate: Double,
-        speed: Double
+        speed: Double,
+        activeEnergy: Double,
+        cadence: Double,
+        power: Double
     ) {
         guard currentRide.state == .recording || currentRide.state == .paused else { return }
 
         watchHeartRate = heartRate
-        if !currentRide.points.isEmpty, heartRate > 0 {
-            currentRide.points[currentRide.points.count - 1].heartRateBeatsPerMinute = Int(heartRate)
+        latestWatchCadenceRPM = cadence
+        latestWatchCyclingPowerWatts = power
+        if !currentRide.points.isEmpty {
+            let lastIndex = currentRide.points.count - 1
+            if heartRate > 0 {
+                currentRide.points[lastIndex].heartRateBeatsPerMinute = Int(heartRate.rounded())
+            }
+            if cadence > 0 {
+                currentRide.points[lastIndex].cadenceRPM = Int(cadence.rounded())
+            }
+            if power > 0 {
+                currentRide.points[lastIndex].cyclingPowerWatts = power
+            }
         }
 
         var metrics = RideStatisticsCalculator.metrics(for: currentRide.points)
@@ -1038,6 +1298,17 @@ final class AppState: ObservableObject {
         metrics.maxSpeedMetersPerSecond = max(metrics.maxSpeedMetersPerSecond, speed)
         if metrics.movingDurationSeconds == 0, elapsed > 0 {
             metrics.averageSpeedMetersPerSecond = distance / elapsed
+        }
+        if activeEnergy > 0 {
+            metrics.activeEnergyKilocalories = activeEnergy
+        }
+        if cadence > 0, metrics.averageCadenceRPM == nil {
+            metrics.averageCadenceRPM = cadence
+            metrics.maxCadenceRPM = cadence
+        }
+        if power > 0, metrics.averageCyclingPowerWatts == nil {
+            metrics.averageCyclingPowerWatts = power
+            metrics.maxCyclingPowerWatts = power
         }
         currentRide.metrics = metrics
     }

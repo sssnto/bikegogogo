@@ -56,12 +56,22 @@ struct BikeGoGoWatchApp: App {
                             break
                         }
                     }
-                    workoutManager.onMetricsChanged = { elapsed, distance, heartRate, speed in
+                    workoutManager.onMetricsChanged = {
+                        elapsed,
+                        distance,
+                        heartRate,
+                        speed,
+                        activeEnergy,
+                        cadence,
+                        power in
                         bridge.sendWorkoutMetrics(
                             elapsedSeconds: elapsed,
                             distanceMeters: distance,
                             heartRate: heartRate,
-                            speedMetersPerSecond: speed
+                            speedMetersPerSecond: speed,
+                            activeEnergyKilocalories: activeEnergy,
+                            cadenceRPM: cadence,
+                            cyclingPowerWatts: power
                         )
                     }
                 }

@@ -1067,6 +1067,8 @@ test("finished rides sync per account and survive reload", async () => {
         longitude: 121.4737,
         speedMetersPerSecond: 6.5,
         heartRateBeatsPerMinute: 128,
+        cadenceRPM: 82,
+        cyclingPowerWatts: 176,
         timestamp: "2026-07-27T01:00:00.000Z"
       }],
       metrics: {
@@ -1077,7 +1079,13 @@ test("finished rides sync per account and survive reload", async () => {
         maxSpeedMetersPerSecond: 12.4,
         elevationGainMeters: 86,
         averageHeartRate: 128,
-        maxHeartRate: 151
+        maxHeartRate: 151,
+        activeEnergyKilocalories: 712,
+        totalEnergyKilocalories: 934,
+        averageCadenceRPM: 81,
+        maxCadenceRPM: 104,
+        averageCyclingPowerWatts: 168,
+        maxCyclingPowerWatts: 412
       }
     };
 
@@ -1108,6 +1116,10 @@ test("finished rides sync per account and survive reload", async () => {
     assert.equal(list.statusCode, 200);
     assert.equal(list.json().rides[0].id, rideId);
     assert.equal(list.json().rides[0].points.length, 1);
+    assert.equal(list.json().rides[0].points[0].cyclingPowerWatts, 176);
+    assert.equal(list.json().rides[0].metrics.activeEnergyKilocalories, 712);
+    assert.equal(list.json().rides[0].metrics.averageCadenceRPM, 81);
+    assert.equal(list.json().rides[0].metrics.maxCyclingPowerWatts, 412);
 
     const deletion = await app.inject({
       method: "DELETE",

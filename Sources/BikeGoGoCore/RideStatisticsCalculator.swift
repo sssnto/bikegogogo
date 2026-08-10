@@ -41,6 +41,8 @@ public enum RideStatisticsCalculator {
         }
 
         let heartRates = ordered.compactMap(\.heartRateBeatsPerMinute)
+        let cadences = ordered.compactMap(\.cadenceRPM).map(Double.init)
+        let powers = ordered.compactMap(\.cyclingPowerWatts)
         let elapsedDurationSeconds = ordered.last!.timestamp.timeIntervalSince(ordered.first!.timestamp)
         let averageSpeed = movingDurationSeconds > 0 ? distanceMeters / movingDurationSeconds : 0
 
@@ -52,7 +54,11 @@ public enum RideStatisticsCalculator {
             maxSpeedMetersPerSecond: maxSpeedMetersPerSecond,
             elevationGainMeters: elevationGainMeters,
             averageHeartRate: average(of: heartRates),
-            maxHeartRate: heartRates.max()
+            maxHeartRate: heartRates.max(),
+            averageCadenceRPM: average(of: cadences),
+            maxCadenceRPM: cadences.max(),
+            averageCyclingPowerWatts: average(of: powers),
+            maxCyclingPowerWatts: powers.max()
         )
     }
 
@@ -76,5 +82,9 @@ public enum RideStatisticsCalculator {
 
         return values.reduce(0, +) / values.count
     }
-}
 
+    private static func average(of values: [Double]) -> Double? {
+        guard !values.isEmpty else { return nil }
+        return values.reduce(0, +) / Double(values.count)
+    }
+}

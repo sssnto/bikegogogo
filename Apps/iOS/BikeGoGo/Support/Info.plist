@@ -36,9 +36,9 @@
 	<key>NSCameraUsageDescription</key>
 	<string>BikeGoGo 需要相机用于骑行小队实时通信中的视频交流；未开启相关功能时不会拍摄或保存内容。</string>
 	<key>NSHealthShareUsageDescription</key>
-	<string>BikeGoGo 需要读取心率和运动数据来展示骑行统计。</string>
+	<string>BikeGoGo 需要读取苹果健身中的户外单车训练、路线、心率、热量、踏频和功率，用于合并并展示完整骑行记录。</string>
 	<key>NSHealthUpdateUsageDescription</key>
-	<string>BikeGoGo 需要写入骑行记录到 Apple 健康。</string>
+	<string>BikeGoGo 需要通过 Apple Watch 记录户外单车训练，并将训练、路线和骑行指标保存到苹果健康。</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>BikeGoGo 需要后台定位，以便锁屏后继续记录骑行路线。</string>
 	<key>NSLocationWhenInUseUsageDescription</key>

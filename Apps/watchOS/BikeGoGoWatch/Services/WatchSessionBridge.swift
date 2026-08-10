@@ -26,14 +26,20 @@ final class WatchSessionBridge: NSObject, ObservableObject {
         elapsedSeconds: TimeInterval,
         distanceMeters: Double,
         heartRate: Double,
-        speedMetersPerSecond: Double
+        speedMetersPerSecond: Double,
+        activeEnergyKilocalories: Double,
+        cadenceRPM: Double,
+        cyclingPowerWatts: Double
     ) {
         send([
             "type": "workoutMetrics",
             "elapsedSeconds": elapsedSeconds,
             "distanceMeters": distanceMeters,
             "heartRate": heartRate,
-            "speedMetersPerSecond": speedMetersPerSecond
+            "speedMetersPerSecond": speedMetersPerSecond,
+            "activeEnergyKilocalories": activeEnergyKilocalories,
+            "cadenceRPM": cadenceRPM,
+            "cyclingPowerWatts": cyclingPowerWatts
         ])
     }
 

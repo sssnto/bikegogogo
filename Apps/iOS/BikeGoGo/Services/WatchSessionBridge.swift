@@ -5,7 +5,8 @@ import WatchConnectivity
 final class WatchSessionBridge: NSObject, WCSessionDelegate {
     var onRideStateReceived: ((RideState) -> Void)?
     var onMuteStateReceived: ((Bool) -> Void)?
-    var onWorkoutMetricsReceived: ((TimeInterval, Double, Double, Double) -> Void)?
+    var onWorkoutMetricsReceived:
+        ((TimeInterval, Double, Double, Double, Double, Double, Double) -> Void)?
 
     private var session: WCSession? {
         WCSession.isSupported() ? .default : nil
@@ -53,7 +54,15 @@ final class WatchSessionBridge: NSObject, WCSessionDelegate {
                       let distance = payload["distanceMeters"] as? Double,
                       let heartRate = payload["heartRate"] as? Double,
                       let speed = payload["speedMetersPerSecond"] as? Double else { return }
-                onWorkoutMetricsReceived?(elapsed, distance, heartRate, speed)
+                onWorkoutMetricsReceived?(
+                    elapsed,
+                    distance,
+                    heartRate,
+                    speed,
+                    payload["activeEnergyKilocalories"] as? Double ?? 0,
+                    payload["cadenceRPM"] as? Double ?? 0,
+                    payload["cyclingPowerWatts"] as? Double ?? 0
+                )
             default:
                 break
             }

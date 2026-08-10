@@ -881,6 +881,7 @@ export async function createApp(config: AppConfig) {
     horizontalAccuracyMeters: z.number().min(0).max(10_000).optional(),
     heartRateBeatsPerMinute: z.number().int().min(20).max(260).optional(),
     cadenceRPM: z.number().int().min(0).max(300).optional(),
+    cyclingPowerWatts: z.number().min(0).max(5_000).optional(),
     timestamp: isoDate
   });
   const rideMetricsSchema = z.object({
@@ -891,7 +892,13 @@ export async function createApp(config: AppConfig) {
     maxSpeedMetersPerSecond: z.number().min(0).max(100),
     elevationGainMeters: z.number().min(0),
     averageHeartRate: z.number().int().min(20).max(260).optional(),
-    maxHeartRate: z.number().int().min(20).max(260).optional()
+    maxHeartRate: z.number().int().min(20).max(260).optional(),
+    activeEnergyKilocalories: z.number().min(0).optional(),
+    totalEnergyKilocalories: z.number().min(0).optional(),
+    averageCadenceRPM: z.number().min(0).max(300).optional(),
+    maxCadenceRPM: z.number().min(0).max(300).optional(),
+    averageCyclingPowerWatts: z.number().min(0).max(5_000).optional(),
+    maxCyclingPowerWatts: z.number().min(0).max(5_000).optional()
   });
   const rideSchema = z.object({
     id: z.string().uuid(),

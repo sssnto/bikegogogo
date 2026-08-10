@@ -21,9 +21,11 @@
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>NSHealthShareUsageDescription</key>
-	<string>BikeGoGo Watch 需要读取心率和运动数据来展示骑行统计。</string>
+	<string>BikeGoGo Watch 需要读取心率、骑行距离、热量、踏频和功率，用于户外单车训练。</string>
 	<key>NSHealthUpdateUsageDescription</key>
-	<string>BikeGoGo Watch 需要保存骑行训练到 Apple 健康。</string>
+	<string>BikeGoGo Watch 需要将户外单车训练、路线和骑行指标保存到苹果健康与健身。</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>BikeGoGo Watch 需要在户外骑行期间记录路线、速度和累计爬升。</string>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>

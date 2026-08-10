@@ -7,12 +7,19 @@ struct RideHistoryView: View {
     var body: some View {
         NavigationStack {
             Group {
-                if appState.recentRides.isEmpty, !appState.isSyncingRides {
-                    ContentUnavailableView(
-                        "还没有骑行记录",
-                        systemImage: "bicycle",
-                        description: Text("完成一次骑行后，路线和数据会安全同步到你的账号。")
-                    )
+                if appState.recentRides.isEmpty,
+                   !appState.isSyncingRides,
+                   !appState.isImportingHealthKit {
+                    ContentUnavailableView {
+                        Label("还没有骑行记录", systemImage: "bicycle")
+                    } description: {
+                        Text("开始一次 BikeGoGo 骑行，或从苹果健身导入已有的户外单车训练。")
+                    } actions: {
+                        Button("从苹果健身导入") {
+                            Task { await appState.refreshRideHistory() }
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
                 } else {
                     List {
                         syncStatus
@@ -52,12 +59,22 @@ struct RideHistoryView: View {
                         }
                     }
                     .refreshable {
-                        await appState.syncRides()
+                        await appState.refreshRideHistory()
                     }
                 }
             }
             .navigationTitle("骑行历史")
             .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        Task { await appState.importHealthKitRides() }
+                    } label: {
+                        Image(systemName: "heart.text.square")
+                    }
+                    .disabled(appState.isImportingHealthKit)
+                    .accessibilityLabel("从苹果健身导入")
+                    .help("从苹果健身导入")
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         Task { await appState.syncRides() }
@@ -72,8 +89,13 @@ struct RideHistoryView: View {
                 }
             }
             .overlay {
-                if appState.isSyncingRides, appState.recentRides.isEmpty {
-                    ProgressView("正在同步骑行记录")
+                if appState.recentRides.isEmpty,
+                   appState.isSyncingRides || appState.isImportingHealthKit {
+                    ProgressView(
+                        appState.isImportingHealthKit
+                            ? "正在读取苹果健身"
+                            : "正在同步骑行记录"
+                    )
                 }
             }
         }
@@ -81,7 +103,17 @@ struct RideHistoryView: View {
 
     @ViewBuilder
     private var syncStatus: some View {
-        if appState.isSyncingRides {
+        if appState.isImportingHealthKit {
+            Section {
+                Label("正在读取苹果健身", systemImage: "heart.text.square")
+                    .foregroundStyle(.secondary)
+            }
+        } else if let message = appState.healthKitImportMessage {
+            Section {
+                Label(message, systemImage: "heart.text.square")
+                    .foregroundStyle(.secondary)
+            }
+        } else if appState.isSyncingRides {
             Section {
                 Label("正在同步", systemImage: "icloud.and.arrow.up")
                     .foregroundStyle(.secondary)
