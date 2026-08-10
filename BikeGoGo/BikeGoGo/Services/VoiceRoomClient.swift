@@ -2,6 +2,7 @@ import AVFAudio
 import Combine
 import Foundation
 import LiveKit
+import LiveKitKrispNoiseFilter
 
 enum VoiceConnectionStatus: Equatable {
     case disconnected
@@ -26,6 +27,7 @@ struct VoiceParticipantSnapshot: Identifiable, Equatable {
     var isSpeaking: Bool
     var connectionQuality: String
     var audioStatus: String
+    var isAudioReady: Bool
     var isLocal: Bool
 }
 
@@ -37,15 +39,81 @@ final class VoiceRoomClient: NSObject, ObservableObject, RoomDelegate, @unchecke
     @Published private(set) var participants: [VoiceParticipantSnapshot] = []
     @Published private(set) var latestTokenResponse: VoiceTokenResponse?
     @Published private(set) var audioRouteName = "正在准备音频"
+    @Published private(set) var noiseCancellationName = "Krisp 增强降噪待连接"
+    @Published private(set) var hasHadRemoteParticipant = false
     @Published private(set) var errorMessage: String?
 
+    var remoteParticipantCount: Int {
+        participants.lazy.filter { !$0.isLocal }.count
+    }
+
+    var remoteAudioReadyCount: Int {
+        participants.lazy.filter { !$0.isLocal && $0.isAudioReady }.count
+    }
+
+    var isLocalAudioReady: Bool {
+        participants.first(where: \.isLocal)?.isAudioReady == true
+    }
+
     private let tokenService = VoiceTokenService()
+    private let krispProcessor = LiveKitKrispNoiseFilter()
     private lazy var room = Room(delegate: self)
+    private var cancellables = Set<AnyCancellable>()
+    private var connectionAttemptID: UUID?
+
+    private static let outdoorCaptureOptions = AudioCaptureOptions(
+        echoCancellation: true,
+        autoGainControl: true,
+        noiseSuppression: true,
+        highpassFilter: true,
+        typingNoiseDetection: false,
+        echoCancellationMode: .automatic,
+        autoGainControlMode: .automatic,
+        noiseSuppressionMode: .automatic,
+        highpassFilterMode: .software
+    )
+
+    private static let mobilePublishOptions = AudioPublishOptions(
+        encoding: AudioEncoding(
+            maxBitrate: 24_000,
+            bitratePriority: .high,
+            networkPriority: .high
+        ),
+        dtx: false,
+        red: true
+    )
+
+    private static let mobileConnectOptions = ConnectOptions(
+        reconnectAttempts: 20,
+        reconnectAttemptDelay: 0.3,
+        reconnectMaxDelay: 5,
+        isDscpEnabled: true
+    )
+
+    private static let voiceRoomOptions = RoomOptions(
+        defaultAudioCaptureOptions: outdoorCaptureOptions,
+        defaultAudioPublishOptions: mobilePublishOptions,
+        singlePeerConnection: true
+    )
 
     override init() {
         super.init()
-        AudioManager.shared.audioSession.isAutomaticConfigurationEnabled = false
+        AudioManager.shared.audioSession.isAutomaticConfigurationEnabled = true
+        AudioManager.shared.audioSession.isAutomaticDeactivationEnabled = true
         AudioManager.shared.audioSession.isSpeakerOutputPreferred = true
+        krispProcessor.isEnabled = true
+        AudioManager.shared.capturePostProcessingDelegate = krispProcessor
+        room.add(delegate: krispProcessor)
+        try? AudioManager.shared.set(microphoneMuteMode: .inputMixer)
+
+        NotificationCenter.default.publisher(
+            for: AVAudioSession.routeChangeNotification
+        )
+        .receive(on: RunLoop.main)
+        .sink { [weak self] _ in
+            self?.updateAudioRoute()
+        }
+        .store(in: &cancellables)
     }
 
     func join(
@@ -60,21 +128,34 @@ final class VoiceRoomClient: NSObject, ObservableObject, RoomDelegate, @unchecke
 
         status = .connecting
         errorMessage = nil
+        hasHadRemoteParticipant = false
+        let attemptID = UUID()
+        connectionAttemptID = attemptID
 
         do {
             guard await requestMicrophonePermission() else {
                 throw VoiceAudioError.microphonePermissionDenied
             }
-            try configureAudioSession()
             let response = try await tokenService.token(
                 groupID: groupID,
                 accessToken: accessToken
             )
             latestTokenResponse = response
 
-            try await room.connect(url: response.url.absoluteString, token: response.token)
+            try await room.connect(
+                url: response.url.absoluteString,
+                token: response.token,
+                connectOptions: Self.mobileConnectOptions,
+                roomOptions: Self.voiceRoomOptions
+            )
+            guard connectionAttemptID == attemptID else {
+                await room.disconnect()
+                return
+            }
             let microphonePublication = try await room.localParticipant.setMicrophone(
-                enabled: true
+                enabled: true,
+                captureOptions: Self.outdoorCaptureOptions,
+                publishOptions: Self.mobilePublishOptions
             )
             guard microphonePublication != nil,
                   room.localParticipant.audioTracks.contains(where: {
@@ -82,29 +163,46 @@ final class VoiceRoomClient: NSObject, ObservableObject, RoomDelegate, @unchecke
                   }) else {
                 throw VoiceAudioError.microphoneTrackUnavailable
             }
+            guard connectionAttemptID == attemptID else {
+                await room.disconnect()
+                return
+            }
 
+            connectionAttemptID = nil
+            updateAudioRoute()
+            noiseCancellationName = "Krisp 增强降噪已启用"
             status = .connected
             isConnected = true
             isMuted = false
             refreshParticipants()
         } catch {
+            let shouldPresentError = connectionAttemptID == attemptID
+            if shouldPresentError {
+                connectionAttemptID = nil
+            }
             await room.disconnect()
-            deactivateAudioSession()
+            guard shouldPresentError else { return }
             status = .disconnected
             isConnected = false
             participants = []
+            hasHadRemoteParticipant = false
+            audioRouteName = "音频已关闭"
+            noiseCancellationName = "Krisp 增强降噪待连接"
             errorMessage = "加入语音失败：\(error.localizedDescription)"
         }
     }
 
     func leave() async {
+        connectionAttemptID = nil
         await room.disconnect()
-        deactivateAudioSession()
         status = .disconnected
         isConnected = false
         isMuted = false
         participants = []
+        hasHadRemoteParticipant = false
         latestTokenResponse = nil
+        audioRouteName = "音频已关闭"
+        noiseCancellationName = "Krisp 增强降噪待连接"
     }
 
     func setMuted(_ muted: Bool) async {
@@ -133,6 +231,7 @@ final class VoiceRoomClient: NSObject, ObservableObject, RoomDelegate, @unchecke
         switch connectionState {
         case .connecting:
             status = .connecting
+            noiseCancellationName = "Krisp 增强降噪初始化中"
         case .connected:
             status = .connected
             isConnected = true
@@ -141,9 +240,11 @@ final class VoiceRoomClient: NSObject, ObservableObject, RoomDelegate, @unchecke
         case .disconnecting, .disconnected:
             status = .disconnected
             isConnected = false
+            noiseCancellationName = "Krisp 增强降噪待连接"
         @unknown default:
             status = .disconnected
             isConnected = false
+            noiseCancellationName = "Krisp 增强降噪待连接"
         }
         refreshParticipants()
     }
@@ -159,25 +260,6 @@ final class VoiceRoomClient: NSObject, ObservableObject, RoomDelegate, @unchecke
         @unknown default:
             return false
         }
-    }
-
-    private func configureAudioSession() throws {
-        let session = AVAudioSession.sharedInstance()
-        try session.setCategory(
-            .playAndRecord,
-            mode: .voiceChat,
-            options: [.allowBluetoothHFP, .allowBluetoothA2DP, .defaultToSpeaker]
-        )
-        try session.setActive(true)
-        updateAudioRoute()
-    }
-
-    private func deactivateAudioSession() {
-        try? AVAudioSession.sharedInstance().setActive(
-            false,
-            options: .notifyOthersOnDeactivation
-        )
-        audioRouteName = "音频已关闭"
     }
 
     private func updateAudioRoute() {
@@ -201,6 +283,9 @@ final class VoiceRoomClient: NSObject, ObservableObject, RoomDelegate, @unchecke
         snapshots.append(contentsOf: room.remoteParticipants.values.map {
             snapshot(for: $0, fallbackID: String(describing: $0.sid), isLocal: false)
         })
+        if snapshots.contains(where: { !$0.isLocal }) {
+            hasHadRemoteParticipant = true
+        }
         participants = snapshots.sorted {
             if $0.isLocal != $1.isLocal { return $0.isLocal }
             return $0.displayName.localizedCompare($1.displayName) == .orderedAscending
@@ -212,13 +297,19 @@ final class VoiceRoomClient: NSObject, ObservableObject, RoomDelegate, @unchecke
         fallbackID: String,
         isLocal: Bool
     ) -> VoiceParticipantSnapshot {
-        VoiceParticipantSnapshot(
+        let microphonePublication = participant.audioTracks.first {
+            $0.source == .microphone
+        }
+        return VoiceParticipantSnapshot(
             id: participant.identity?.stringValue ?? fallbackID,
             displayName: participant.name ?? participant.identity?.stringValue ?? "骑友",
             isMuted: !participant.isMicrophoneEnabled(),
             isSpeaking: participant.isSpeaking,
             connectionQuality: qualityTitle(participant.connectionQuality),
             audioStatus: audioStatus(for: participant, isLocal: isLocal),
+            isAudioReady: microphonePublication.map {
+                isLocal || $0.isSubscribed
+            } ?? false,
             isLocal: isLocal
         )
     }

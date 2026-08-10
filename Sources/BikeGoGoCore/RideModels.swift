@@ -22,6 +22,7 @@ public struct RidePoint: Codable, Equatable, Sendable {
     public var horizontalAccuracyMeters: Double?
     public var heartRateBeatsPerMinute: Int?
     public var cadenceRPM: Int?
+    public var cyclingPowerWatts: Double?
     public var timestamp: Date
 
     public init(
@@ -33,6 +34,7 @@ public struct RidePoint: Codable, Equatable, Sendable {
         horizontalAccuracyMeters: Double? = nil,
         heartRateBeatsPerMinute: Int? = nil,
         cadenceRPM: Int? = nil,
+        cyclingPowerWatts: Double? = nil,
         timestamp: Date
     ) {
         self.latitude = latitude
@@ -43,6 +45,7 @@ public struct RidePoint: Codable, Equatable, Sendable {
         self.horizontalAccuracyMeters = horizontalAccuracyMeters
         self.heartRateBeatsPerMinute = heartRateBeatsPerMinute
         self.cadenceRPM = cadenceRPM
+        self.cyclingPowerWatts = cyclingPowerWatts
         self.timestamp = timestamp
     }
 }
@@ -56,6 +59,12 @@ public struct RideMetrics: Codable, Equatable, Sendable {
     public var elevationGainMeters: Double
     public var averageHeartRate: Int?
     public var maxHeartRate: Int?
+    public var activeEnergyKilocalories: Double?
+    public var totalEnergyKilocalories: Double?
+    public var averageCadenceRPM: Double?
+    public var maxCadenceRPM: Double?
+    public var averageCyclingPowerWatts: Double?
+    public var maxCyclingPowerWatts: Double?
 
     public init(
         distanceMeters: Double = 0,
@@ -65,7 +74,13 @@ public struct RideMetrics: Codable, Equatable, Sendable {
         maxSpeedMetersPerSecond: Double = 0,
         elevationGainMeters: Double = 0,
         averageHeartRate: Int? = nil,
-        maxHeartRate: Int? = nil
+        maxHeartRate: Int? = nil,
+        activeEnergyKilocalories: Double? = nil,
+        totalEnergyKilocalories: Double? = nil,
+        averageCadenceRPM: Double? = nil,
+        maxCadenceRPM: Double? = nil,
+        averageCyclingPowerWatts: Double? = nil,
+        maxCyclingPowerWatts: Double? = nil
     ) {
         self.distanceMeters = distanceMeters
         self.movingDurationSeconds = movingDurationSeconds
@@ -75,6 +90,12 @@ public struct RideMetrics: Codable, Equatable, Sendable {
         self.elevationGainMeters = elevationGainMeters
         self.averageHeartRate = averageHeartRate
         self.maxHeartRate = maxHeartRate
+        self.activeEnergyKilocalories = activeEnergyKilocalories
+        self.totalEnergyKilocalories = totalEnergyKilocalories
+        self.averageCadenceRPM = averageCadenceRPM
+        self.maxCadenceRPM = maxCadenceRPM
+        self.averageCyclingPowerWatts = averageCyclingPowerWatts
+        self.maxCyclingPowerWatts = maxCyclingPowerWatts
     }
 }
 
@@ -122,4 +143,3 @@ public extension RideMetrics {
         maxSpeedMetersPerSecond * 3.6
     }
 }
-

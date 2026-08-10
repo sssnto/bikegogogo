@@ -57,6 +57,7 @@ export type RidePointRecord = {
   horizontalAccuracyMeters?: number;
   heartRateBeatsPerMinute?: number;
   cadenceRPM?: number;
+  cyclingPowerWatts?: number;
   timestamp: string;
 };
 
@@ -69,6 +70,12 @@ export type RideMetricsRecord = {
   elevationGainMeters: number;
   averageHeartRate?: number;
   maxHeartRate?: number;
+  activeEnergyKilocalories?: number;
+  totalEnergyKilocalories?: number;
+  averageCadenceRPM?: number;
+  maxCadenceRPM?: number;
+  averageCyclingPowerWatts?: number;
+  maxCyclingPowerWatts?: number;
 };
 
 export type RideRecord = {

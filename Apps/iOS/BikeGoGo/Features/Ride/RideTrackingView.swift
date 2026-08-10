@@ -4,7 +4,7 @@ import MapKit
 import SwiftUI
 
 private let defaultRideMapRegion = MKCoordinateRegion(
-    center: CLLocationCoordinate2D(latitude: 31.2304, longitude: 121.4737),
+    center: mapDisplayCoordinate(latitude: 31.2304, longitude: 121.4737),
     span: MKCoordinateSpan(latitudeDelta: 0.025, longitudeDelta: 0.025)
 )
 
@@ -25,13 +25,13 @@ struct RideTrackingView: View {
 
     private var coordinates: [CLLocationCoordinate2D] {
         appState.currentRide.points.map {
-            CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
+            mapDisplayCoordinate(latitude: $0.latitude, longitude: $0.longitude)
         }
     }
 
     private var referenceCoordinates: [CLLocationCoordinate2D] {
         appState.referenceRide?.points.map {
-            CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
+            mapDisplayCoordinate(latitude: $0.latitude, longitude: $0.longitude)
         } ?? []
     }
 
@@ -141,7 +141,7 @@ struct RideTrackingView: View {
             ForEach(appState.teammateLocations) { location in
                 Annotation(
                     location.user.displayName,
-                    coordinate: CLLocationCoordinate2D(
+                    coordinate: mapDisplayCoordinate(
                         latitude: location.latitude,
                         longitude: location.longitude
                     )
@@ -157,7 +157,7 @@ struct RideTrackingView: View {
             if let meetingPoint = appState.teamMeetingPoint {
                 Annotation(
                     meetingPoint.title,
-                    coordinate: CLLocationCoordinate2D(
+                    coordinate: mapDisplayCoordinate(
                         latitude: meetingPoint.latitude,
                         longitude: meetingPoint.longitude
                     )
@@ -323,34 +323,40 @@ struct RideTrackingView: View {
 
     @ViewBuilder
     private var rideTeamVoiceButton: some View {
-        if appState.voiceClient.isConnected {
+        if appState.hasActiveVoiceCall {
             Menu {
-                Button {
-                    Task {
-                        await appState.toggleMute()
+                if appState.voiceClient.isConnected {
+                    Button {
+                        Task {
+                            await appState.toggleMute()
+                        }
+                    } label: {
+                        Label(
+                            appState.voiceClient.isMuted ? "打开麦克风" : "静音",
+                            systemImage: appState.voiceClient.isMuted
+                                ? "mic.fill"
+                                : "mic.slash.fill"
+                        )
                     }
-                } label: {
-                    Label(
-                        appState.voiceClient.isMuted ? "打开麦克风" : "静音",
-                        systemImage: appState.voiceClient.isMuted
-                            ? "mic.fill"
-                            : "mic.slash.fill"
-                    )
                 }
                 Button(role: .destructive) {
                     Task {
                         await appState.leaveVoiceRoom()
                     }
                 } label: {
-                    Label("结束语音", systemImage: "phone.down.fill")
+                    Label(
+                        appState.voiceCallPhase == .connected ? "结束语音" : "取消呼叫",
+                        systemImage: "phone.down.fill"
+                    )
                 }
             } label: {
                 mapActionIcon(
-                    appState.voiceClient.isMuted ? "mic.slash.fill" : "waveform",
-                    color: appState.voiceClient.isMuted ? .orange : .green
+                    rideVoiceStatusIcon,
+                    color: rideVoiceStatusColor
                 )
             }
-            .accessibilityLabel("管理骑行语音")
+            .accessibilityLabel(appState.voiceCallPhase.title)
+            .accessibilityValue(appState.voiceCallStatusDetail)
         } else {
             Button {
                 Task {
@@ -361,6 +367,26 @@ struct RideTrackingView: View {
             }
             .accessibilityLabel("呼叫当前小队")
             .disabled(appState.activeLocationSharingGroup == nil)
+        }
+    }
+
+    private var rideVoiceStatusIcon: String {
+        if appState.voiceClient.isMuted {
+            return "mic.slash.fill"
+        }
+        return appState.voiceCallPhase.systemImage
+    }
+
+    private var rideVoiceStatusColor: Color {
+        switch appState.voiceCallPhase {
+        case .connected:
+            .green
+        case .reconnecting:
+            .yellow
+        case .idle:
+            .primary
+        case .preparing, .calling, .connecting, .syncingAudio, .waitingForParticipants:
+            .orange
         }
     }
 
@@ -475,7 +501,7 @@ struct RideTrackingView: View {
         withAnimation(.easeInOut(duration: 0.3)) {
             camera = .region(
                 MKCoordinateRegion(
-                    center: CLLocationCoordinate2D(
+                    center: mapDisplayCoordinate(
                         latitude: meetingPoint.latitude,
                         longitude: meetingPoint.longitude
                     ),
@@ -491,7 +517,7 @@ struct RideTrackingView: View {
     private func openMeetingPointInMaps(_ meetingPoint: GroupMeetingPoint) {
         let mapItem = MKMapItem(
             placemark: MKPlacemark(
-                coordinate: CLLocationCoordinate2D(
+                coordinate: mapDisplayCoordinate(
                     latitude: meetingPoint.latitude,
                     longitude: meetingPoint.longitude
                 )
@@ -651,7 +677,7 @@ struct RideTrackingView: View {
         color: Color
     )? {
         guard let meetingPoint = appState.teamMeetingPoint,
-              let point = appState.currentRide.points.last else {
+              let point = appState.currentReliableLocation else {
             return nil
         }
         let distance = CLLocation(
@@ -879,6 +905,20 @@ private struct MeetingPointMemberProgress: Identifiable {
     }
 }
 
+private func mapDisplayCoordinate(
+    latitude: Double,
+    longitude: Double
+) -> CLLocationCoordinate2D {
+    let coordinate = MapDisplayCoordinateConverter.coordinate(
+        latitude: latitude,
+        longitude: longitude
+    )
+    return CLLocationCoordinate2D(
+        latitude: coordinate.latitude,
+        longitude: coordinate.longitude
+    )
+}
+
 private struct TeamRideStatusSheet: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var appState: AppState
@@ -1023,7 +1063,7 @@ private struct TeamRideStatusSheet: View {
     private func meetingPointDistanceText(
         _ meetingPoint: GroupMeetingPoint
     ) -> String {
-        guard let point = appState.currentRide.points.last else {
+        guard let point = appState.currentReliableLocation else {
             return "等待当前位置"
         }
         let riderLocation = CLLocation(
@@ -1051,7 +1091,7 @@ private struct TeamRideStatusSheet: View {
     private func meetingPointETAForCurrentUser(
         _ meetingPoint: GroupMeetingPoint
     ) -> String {
-        guard let point = appState.currentRide.points.last else {
+        guard let point = appState.currentReliableLocation else {
             return "等待当前位置"
         }
         let distance = CLLocation(
@@ -1086,7 +1126,7 @@ private struct TeamRideStatusSheet: View {
             let coordinate: CLLocationCoordinate2D?
             let speedMetersPerSecond: Double?
             let averageSpeedMetersPerSecond: Double?
-            if isCurrentUser, let point = appState.currentRide.points.last {
+            if isCurrentUser, let point = appState.currentReliableLocation {
                 coordinate = CLLocationCoordinate2D(
                     latitude: point.latitude,
                     longitude: point.longitude

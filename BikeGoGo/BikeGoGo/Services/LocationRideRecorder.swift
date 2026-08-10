@@ -8,10 +8,12 @@ final class LocationRideRecorder: NSObject, ObservableObject {
     @Published private(set) var authorizationStatus: CLAuthorizationStatus = .notDetermined
     @Published private(set) var currentSpeedMetersPerSecond = 0.0
     @Published private(set) var locationAccuracyMeters: Double?
+    @Published private(set) var latestReliablePoint: RidePoint?
     @Published private(set) var isWaitingForAccurateLocation = false
     @Published private(set) var lastErrorMessage: String?
 
     var onPointsChanged: (([RidePoint]) -> Void)?
+    var onReliableLocationChanged: ((RidePoint) -> Void)?
 
     private let manager = CLLocationManager()
     private var isRecording = false
@@ -41,6 +43,7 @@ final class LocationRideRecorder: NSObject, ObservableObject {
         locationFilter.reset(lastAcceptedPoint: keepingExistingPoints ? points.last : nil)
         lastErrorMessage = nil
         locationAccuracyMeters = nil
+        latestReliablePoint = nil
         isWaitingForAccurateLocation = true
         isRecording = true
         configureActiveTracking()
@@ -65,6 +68,7 @@ final class LocationRideRecorder: NSObject, ObservableObject {
         isRecording = false
         currentSpeedMetersPerSecond = 0
         locationAccuracyMeters = nil
+        latestReliablePoint = nil
         isWaitingForAccurateLocation = false
         manager.stopUpdatingLocation()
         manager.allowsBackgroundLocationUpdates = false
@@ -112,17 +116,19 @@ extension LocationRideRecorder: CLLocationManagerDelegate {
             }
         }
 
+        if let reliableLocation = freshLocations.last(where: {
+            $0.horizontalAccuracy >= 0
+                && $0.horizontalAccuracy
+                    <= RideLocationFilter.maximumTrackingHorizontalAccuracyMeters
+        }) {
+            let point = Self.ridePoint(from: reliableLocation)
+            latestReliablePoint = point
+            onReliableLocationChanged?(point)
+        }
+
         var newPoints: [RidePoint] = []
         for location in freshLocations {
-            let point = RidePoint(
-                latitude: location.coordinate.latitude,
-                longitude: location.coordinate.longitude,
-                elevationMeters: location.altitude,
-                speedMetersPerSecond: location.speed >= 0 ? location.speed : nil,
-                courseDegrees: location.course >= 0 ? location.course : nil,
-                horizontalAccuracyMeters: location.horizontalAccuracy,
-                timestamp: location.timestamp
-            )
+            let point = Self.ridePoint(from: location)
             if locationFilter.accepts(point) {
                 newPoints.append(point)
             }
@@ -137,5 +143,17 @@ extension LocationRideRecorder: CLLocationManagerDelegate {
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         guard (error as? CLError)?.code != .locationUnknown else { return }
         lastErrorMessage = error.localizedDescription
+    }
+
+    private static func ridePoint(from location: CLLocation) -> RidePoint {
+        RidePoint(
+            latitude: location.coordinate.latitude,
+            longitude: location.coordinate.longitude,
+            elevationMeters: location.altitude,
+            speedMetersPerSecond: location.speed >= 0 ? location.speed : nil,
+            courseDegrees: location.course >= 0 ? location.course : nil,
+            horizontalAccuracyMeters: location.horizontalAccuracy,
+            timestamp: location.timestamp
+        )
     }
 }

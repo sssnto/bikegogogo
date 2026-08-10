@@ -32,29 +32,29 @@ struct VoiceRoomView: View {
         NavigationStack {
             List {
                 Section("语音房间") {
-                    Picker("通话范围", selection: $scope) {
-                        ForEach(VoiceScope.allCases) { option in
-                            Text(option.rawValue).tag(option)
+                    voiceStatusPanel
+                        .listRowInsets(EdgeInsets())
+                        .listRowBackground(Color.clear)
+
+                    if appState.voiceCallPhase == .idle {
+                        Picker("通话范围", selection: $scope) {
+                            ForEach(VoiceScope.allCases) { option in
+                                Text(option.rawValue).tag(option)
+                            }
                         }
-                    }
-                    .pickerStyle(.segmented)
-                    .disabled(appState.voiceClient.isConnected)
+                        .pickerStyle(.segmented)
 
-                    targetPicker
-
-                    HStack {
-                        Label(
-                            selectedTargetName.map { "与 \($0) 通话" } ?? "请选择通话对象",
-                            systemImage: "waveform.circle"
+                        targetPicker
+                    } else if let context = appState.activeVoiceCallContext {
+                        LabeledContent(
+                            context.isGroupCall ? "当前小队" : "当前好友",
+                            value: context.targetName
                         )
-                        Spacer()
-                        Text(appState.voiceClient.status.title)
-                            .foregroundStyle(appState.voiceClient.isConnected ? .green : .secondary)
                     }
 
                     Button {
                         Task {
-                            if appState.voiceClient.isConnected {
+                            if appState.hasActiveVoiceCall {
                                 await appState.leaveVoiceRoom()
                             } else if let selectedTargetID {
                                 await appState.startVoiceCall(targetID: selectedTargetID)
@@ -62,28 +62,29 @@ struct VoiceRoomView: View {
                         }
                     } label: {
                         Label(
-                            appState.voiceClient.isConnected ? "结束语音" : "发起语音",
-                            systemImage: appState.voiceClient.isConnected
+                            appState.hasActiveVoiceCall
+                                ? activeCallActionTitle
+                                : "发起语音",
+                            systemImage: appState.hasActiveVoiceCall
                                 ? "phone.down.fill"
                                 : "phone.fill"
                         )
+                        .frame(maxWidth: .infinity)
                     }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .tint(appState.hasActiveVoiceCall ? .red : .teal)
                     .disabled(
-                        appState.voiceClient.status == .connecting
-                            || appState.voiceClient.status == .reconnecting
-                            || appState.isHandlingVoiceInvitation
-                            || (!appState.voiceClient.isConnected && selectedTargetID == nil)
+                        appState.voiceCallPhase == .preparing
+                            || (!appState.hasActiveVoiceCall && selectedTargetID == nil)
                     )
-
-                    if appState.outgoingVoiceInvitation != nil,
-                       appState.voiceClient.participants.filter({ !$0.isLocal }).isEmpty {
-                        Label("邀请已发送，正在等待对方接听", systemImage: "phone.arrow.up.right")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
 
                     if appState.voiceClient.isConnected {
                         LabeledContent("音频输出", value: appState.voiceClient.audioRouteName)
+                        LabeledContent(
+                            "环境降噪",
+                            value: appState.voiceClient.noiseCancellationName
+                        )
                     }
 
                     Button {
@@ -205,6 +206,79 @@ struct VoiceRoomView: View {
                 Text(appState.voiceCallMessage ?? "")
             }
         }
+    }
+
+    private var activeCallActionTitle: String {
+        switch appState.voiceCallPhase {
+        case .preparing, .calling, .connecting, .syncingAudio:
+            "取消呼叫"
+        case .connected, .reconnecting, .waitingForParticipants:
+            "结束语音"
+        case .idle:
+            "发起语音"
+        }
+    }
+
+    private var voiceStatusTint: Color {
+        switch appState.voiceCallPhase {
+        case .connected:
+            .green
+        case .preparing, .calling, .connecting, .syncingAudio, .waitingForParticipants:
+            .orange
+        case .reconnecting:
+            .yellow
+        case .idle:
+            .secondary
+        }
+    }
+
+    private var voiceStatusPanel: some View {
+        HStack(spacing: 14) {
+            ZStack {
+                Circle()
+                    .fill(voiceStatusTint.opacity(0.14))
+                    .frame(width: 48, height: 48)
+                if appState.voiceCallPhase.showsProgress {
+                    ProgressView()
+                        .tint(voiceStatusTint)
+                } else {
+                    Image(systemName: appState.voiceCallPhase.systemImage)
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(voiceStatusTint)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(appState.voiceCallPhase.title)
+                    .font(.headline)
+                    .foregroundStyle(voiceStatusTint)
+                Text(
+                    appState.voiceCallPhase == .idle
+                        ? selectedTargetName.map { "准备与\($0)通话" }
+                            ?? appState.voiceCallStatusDetail
+                        : appState.voiceCallStatusDetail
+                )
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+
+                if appState.voiceCallPhase == .connected,
+                   appState.voiceClient.isMuted {
+                    Label("我的麦克风已静音", systemImage: "mic.slash.fill")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(16)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(voiceStatusTint.opacity(0.35), lineWidth: 1)
+        }
+        .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
     }
 
     @ViewBuilder
