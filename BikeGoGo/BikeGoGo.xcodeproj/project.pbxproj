@@ -28,8 +28,6 @@
 		6FA2AC0B301312C000385B45 /* AppConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FA2ABF6301312BF00385B45 /* AppConfiguration.swift */; };
 		6FA2AC0F3013216600385B45 /* BikeGoGoCore in Frameworks */ = {isa = PBXBuildFile; productRef = 6FA2AC0E3013216600385B45 /* BikeGoGoCore */; };
 		6FA2AC123013216600385B45 /* LiveKit in Frameworks */ = {isa = PBXBuildFile; productRef = 6FA2AC113013216600385B45 /* LiveKit */; };
-		A1CC00163015000000385B45 /* LiveKitKrispNoiseFilter in Frameworks */ = {isa = PBXBuildFile; productRef = A1CC00183015000000385B45 /* LiveKitKrispNoiseFilter */; };
-		A1CC00193016000000385B45 /* BikeGoGoCore in Frameworks */ = {isa = PBXBuildFile; productRef = 6FA2AC0E3013216600385B45 /* BikeGoGoCore */; };
 		9274A00DA9BDA00C5E70DCFE /* WatchSessionBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = C544184F65397BBDBF5AD188 /* WatchSessionBridge.swift */; };
 		9DD91701B7521C63CAC55E72 /* HealthKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A09BBFDAAB874D33AB3AA0A6 /* HealthKit.framework */; };
 		A1CC00013013200000385B45 /* AccountClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1CC00023013200000385B45 /* AccountClient.swift */; };
@@ -41,6 +39,8 @@
 		A1CC00103013300000385B45 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A1CC00123013300000385B45 /* PrivacyInfo.xcprivacy */; };
 		A1CC00113013300000385B45 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A1CC00133013300000385B45 /* PrivacyInfo.xcprivacy */; };
 		A1CC00143014000000385B45 /* GroupLiveLocationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1CC00153014000000385B45 /* GroupLiveLocationService.swift */; };
+		A1CC00163015000000385B45 /* LiveKitKrispNoiseFilter in Frameworks */ = {isa = PBXBuildFile; productRef = A1CC00183015000000385B45 /* LiveKitKrispNoiseFilter */; };
+		A1CC00193016000000385B45 /* BikeGoGoCore in Frameworks */ = {isa = PBXBuildFile; productRef = 6FA2AC0E3013216600385B45 /* BikeGoGoCore */; };
 		A1CC001A3017000000385B45 /* RideShareComposerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1CC001C3017000000385B45 /* RideShareComposerView.swift */; };
 		A1CC001B3017000000385B45 /* RideShareMediaExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1CC001D3017000000385B45 /* RideShareMediaExporter.swift */; };
 		A1CC001E3018000000385B45 /* HealthKitRideImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1CC001F3018000000385B45 /* HealthKitRideImporter.swift */; };
@@ -462,7 +462,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = ../Apps/watchOS/BikeGoGoWatch/Support/BikeGoGoWatch.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 15;
+				CURRENT_PROJECT_VERSION = 21;
 				DEVELOPMENT_TEAM = FR9RTRV9BC;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -612,7 +612,7 @@
 				BIKEGOGO_PUSH_ENVIRONMENT = sandbox;
 				CODE_SIGN_ENTITLEMENTS = BikeGoGo/Support/BikeGoGo.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 15;
+				CURRENT_PROJECT_VERSION = 21;
 				DEVELOPMENT_TEAM = FR9RTRV9BC;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -620,8 +620,7 @@
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -636,7 +635,7 @@
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Debug;
 		};
@@ -649,7 +648,7 @@
 				BIKEGOGO_PUSH_ENVIRONMENT = production;
 				CODE_SIGN_ENTITLEMENTS = BikeGoGo/Support/BikeGoGo.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 15;
+				CURRENT_PROJECT_VERSION = 21;
 				DEVELOPMENT_TEAM = FR9RTRV9BC;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -657,8 +656,7 @@
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -673,7 +671,7 @@
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Release;
 		};
@@ -683,7 +681,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = ../Apps/watchOS/BikeGoGoWatch/Support/BikeGoGoWatch.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 15;
+				CURRENT_PROJECT_VERSION = 21;
 				DEVELOPMENT_TEAM = FR9RTRV9BC;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;

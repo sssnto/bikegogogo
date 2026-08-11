@@ -1,37 +1,62 @@
 import Foundation
 import SwiftUI
 
+enum BikeGoGoStyle {
+    static let brand = Color(red: 0.03, green: 0.49, blue: 0.45)
+    static let route = Color(red: 0.13, green: 0.76, blue: 0.34)
+    static let speed = Color(red: 0.00, green: 0.65, blue: 0.78)
+    static let warning = Color(red: 1.00, green: 0.62, blue: 0.04)
+    static let danger = Color(red: 1.00, green: 0.27, blue: 0.28)
+    static let cornerRadius: CGFloat = 8
+}
+
+private enum AppTab: Hashable {
+    case ride
+    case team
+    case history
+    case profile
+}
+
 struct RootView: View {
     @Environment(\.openURL) private var openURL
     @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var appState: AppState
+    @State private var selectedTab: AppTab = .ride
 
     var body: some View {
-        TabView {
+        TabView(selection: $selectedTab) {
             RideTrackingView()
                 .tabItem {
                     Label("骑行", systemImage: "bicycle")
                 }
+                .tag(AppTab.ride)
 
             VoiceRoomView()
                 .tabItem {
-                    Label("语音", systemImage: "waveform")
+                    Label("小队", systemImage: "person.3.fill")
                 }
+                .tag(AppTab.team)
+
+            RideHistoryView()
+                .tabItem {
+                    Label("记录", systemImage: "clock.arrow.circlepath")
+                }
+                .tag(AppTab.history)
 
             FriendsView()
                 .tabItem {
                     Label("我的", systemImage: "person.crop.circle")
                 }
-
-            RideHistoryView()
-                .tabItem {
-                    Label("历史", systemImage: "clock.arrow.circlepath")
-                }
+                .tag(AppTab.profile)
         }
+        .tint(BikeGoGoStyle.brand)
         .safeAreaInset(edge: .top, spacing: 0) {
             if appState.hasActiveVoiceCall,
-               appState.incomingVoiceInvitation == nil {
-                VoiceCallStatusBar()
+               appState.incomingVoiceInvitation == nil,
+               selectedTab != .team {
+                VoiceCallStatusBar {
+                    selectedTab = .team
+                }
                     .environmentObject(appState)
             }
         }
@@ -74,6 +99,11 @@ struct RootView: View {
                 await appState.refreshIncomingVoiceInvitations()
             }
         }
+        .onChange(of: appState.incomingVoiceInvitation) { oldValue, newValue in
+            if oldValue != nil, newValue == nil, appState.hasActiveVoiceCall {
+                selectedTab = .team
+            }
+        }
     }
 
     private func mapURL(for event: TeamSOSPushEvent) -> URL? {
@@ -91,6 +121,7 @@ struct RootView: View {
 
 private struct VoiceCallStatusBar: View {
     @EnvironmentObject private var appState: AppState
+    let onOpen: () -> Void
 
     private var tint: Color {
         switch appState.voiceCallPhase {
@@ -122,17 +153,27 @@ private struct VoiceCallStatusBar: View {
                 }
             }
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(appState.voiceCallPhase.title)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(tint)
-                Text(appState.voiceCallStatusDetail)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
+            Button(action: onOpen) {
+                HStack(spacing: 8) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(appState.voiceCallPhase.title)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(tint)
+                        Text(appState.voiceCallStatusDetail)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
 
-            Spacer(minLength: 4)
+                    Spacer(minLength: 0)
+
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("打开小队语音")
 
             if appState.voiceClient.isConnected {
                 Button {

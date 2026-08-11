@@ -113,9 +113,9 @@ Outdoor Cycling workout。小队语音仅允许已建立好友关系或同一小
 
 隐私政策正文已准备在 `docs/PRIVACY_POLICY.md`。外部测试或 App Store 提交前：
 
-1. 填入真实联系邮箱。
-2. 将政策部署到无需登录即可打开的 HTTPS 页面。
-3. 把公网 URL 填入 App Store Connect 的“隐私政策 URL”。
+1. 确认联系邮箱仍然有效。
+2. 按 NAS 部署文档启动 `privacy-policy` 并配置 Nginx Proxy Manager。
+3. 把 `https://bikegogogo-privacy.sssnto.cn` 填入 App Store Connect 的“隐私政策 URL”。
 
 App 隐私问卷按当前实现申报：
 
@@ -125,6 +125,7 @@ App 隐私问卷按当前实现申报：
 | 用户 ID、设备 ID | 是 | 否 | App 功能 |
 | 精确位置 | 是 | 否 | App 功能 |
 | 健康、健身 | 是 | 否 | App 功能 |
+| 其他数据类型（骑行天气摘要） | 是 | 否 | App 功能 |
 
 实时语音当前不录音、不持久化。若以后启用 LiveKit 录制、分析或日志采集，必须在发布
 前同步更新隐私政策、隐私清单和 App Store Connect 问卷。

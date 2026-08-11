@@ -11,153 +11,26 @@ private enum VoiceScope: String, CaseIterable, Identifiable {
 struct VoiceRoomView: View {
     @EnvironmentObject private var appState: AppState
     @State private var scope: VoiceScope = .group
-    @State private var selectedGroupID: String?
-    @State private var selectedFriendID: String?
     @State private var isCreatingGroup = false
-
-    private var selectedTargetID: String? {
-        scope == .group ? selectedGroupID : selectedFriendID
-    }
-
-    private var selectedTargetName: String? {
-        switch scope {
-        case .group:
-            appState.accountClient.groups.first { $0.id == selectedGroupID }?.name
-        case .friend:
-            appState.accountClient.friends.first { $0.id == selectedFriendID }?.displayName
-        }
-    }
 
     var body: some View {
         NavigationStack {
-            List {
-                Section("语音房间") {
-                    voiceStatusPanel
-                        .listRowInsets(EdgeInsets())
-                        .listRowBackground(Color.clear)
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 24) {
+                    callOverview
 
-                    if appState.voiceCallPhase == .idle {
-                        Picker("通话范围", selection: $scope) {
-                            ForEach(VoiceScope.allCases) { option in
-                                Text(option.rawValue).tag(option)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-
-                        targetPicker
-                    } else if let context = appState.activeVoiceCallContext {
-                        LabeledContent(
-                            context.isGroupCall ? "当前小队" : "当前好友",
-                            value: context.targetName
-                        )
-                    }
-
-                    Button {
-                        Task {
-                            if appState.hasActiveVoiceCall {
-                                await appState.leaveVoiceRoom()
-                            } else if let selectedTargetID {
-                                await appState.startVoiceCall(targetID: selectedTargetID)
-                            }
-                        }
-                    } label: {
-                        Label(
-                            appState.hasActiveVoiceCall
-                                ? activeCallActionTitle
-                                : "发起语音",
-                            systemImage: appState.hasActiveVoiceCall
-                                ? "phone.down.fill"
-                                : "phone.fill"
-                        )
-                        .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    .tint(appState.hasActiveVoiceCall ? .red : .teal)
-                    .disabled(
-                        appState.voiceCallPhase == .preparing
-                            || (!appState.hasActiveVoiceCall && selectedTargetID == nil)
-                    )
-
-                    if appState.voiceClient.isConnected {
-                        LabeledContent("音频输出", value: appState.voiceClient.audioRouteName)
-                        LabeledContent(
-                            "环境降噪",
-                            value: appState.voiceClient.noiseCancellationName
-                        )
-                    }
-
-                    Button {
-                        Task { await appState.toggleMute() }
-                    } label: {
-                        Label(
-                            appState.voiceClient.isMuted ? "解除静音" : "静音",
-                            systemImage: appState.voiceClient.isMuted
-                                ? "mic.slash.fill"
-                                : "mic.fill"
-                        )
-                    }
-                    .disabled(!appState.voiceClient.isConnected)
-                }
-
-                Section("在线成员") {
-                    if appState.voiceClient.participants.isEmpty {
-                        Text("加入语音后显示在线成员")
-                            .foregroundStyle(.secondary)
-                    }
-
-                    ForEach(appState.voiceClient.participants) { participant in
-                        HStack(spacing: 12) {
-                            Image(systemName: participant.isMuted ? "mic.slash.circle" : "mic.circle")
-                                .foregroundStyle(participant.isSpeaking ? .green : .secondary)
-                            VStack(alignment: .leading) {
-                                Text(
-                                    participant.isLocal
-                                        ? "\(participant.displayName)（我）"
-                                        : participant.displayName
-                                )
-                                Text(participant.connectionQuality)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                Text(participant.audioStatus)
-                                    .font(.caption)
-                                    .foregroundStyle(
-                                        participant.audioStatus.contains("已发送")
-                                            || participant.audioStatus.contains("已接收")
-                                            ? .green
-                                            : .orange
-                                    )
-                            }
-                            Spacer()
-                        }
-                    }
-                }
-
-                Section("我的小队") {
-                    if appState.accountClient.groups.isEmpty {
-                        Text("创建小队后，可以邀请已互相同意的好友加入多人语音。")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                    if appState.hasActiveVoiceCall {
+                        activeCallControls
+                        participantSection
                     } else {
-                        ForEach(appState.accountClient.groups) { group in
-                            NavigationLink {
-                                GroupDetailView(
-                                    account: appState.accountClient,
-                                    groupID: group.id
-                                )
-                            } label: {
-                                HStack {
-                                    Label(group.name, systemImage: "person.3.fill")
-                                    Spacer()
-                                    Text("\(group.members.count) 人")
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                        }
+                        targetDirectory
                     }
                 }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
             }
-            .navigationTitle("骑行语音")
+            .background(Color(uiColor: .systemGroupedBackground))
+            .navigationTitle("小队")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
@@ -169,12 +42,13 @@ struct VoiceRoomView: View {
                     .accessibilityLabel("创建小队")
                 }
             }
-            .onAppear { chooseAvailableTargets() }
-            .onChange(of: appState.accountClient.groups) { _, _ in
-                chooseAvailableTargets()
+            .refreshable {
+                await appState.accountClient.refresh(presentsErrors: false)
+                await appState.refreshIncomingVoiceInvitations()
             }
-            .onChange(of: appState.accountClient.friends) { _, _ in
-                chooseAvailableTargets()
+            .task {
+                await appState.accountClient.refresh(presentsErrors: false)
+                await appState.refreshIncomingVoiceInvitations()
             }
             .sheet(isPresented: $isCreatingGroup) {
                 CreateGroupSheet(account: appState.accountClient)
@@ -186,9 +60,7 @@ struct VoiceRoomView: View {
                     set: { if !$0 { appState.voiceClient.dismissError() } }
                 )
             ) {
-                Button("知道了") {
-                    appState.voiceClient.dismissError()
-                }
+                Button("知道了") { appState.voiceClient.dismissError() }
             } message: {
                 Text(appState.voiceClient.errorMessage ?? "")
             }
@@ -199,11 +71,235 @@ struct VoiceRoomView: View {
                     set: { if !$0 { appState.voiceCallMessage = nil } }
                 )
             ) {
-                Button("知道了") {
-                    appState.voiceCallMessage = nil
-                }
+                Button("知道了") { appState.voiceCallMessage = nil }
             } message: {
                 Text(appState.voiceCallMessage ?? "")
+            }
+        }
+    }
+
+    private var callOverview: some View {
+        HStack(spacing: 14) {
+            ZStack {
+                RoundedRectangle(cornerRadius: BikeGoGoStyle.cornerRadius)
+                    .fill(voiceStatusTint.opacity(0.14))
+                    .frame(width: 56, height: 56)
+
+                if appState.voiceCallPhase.showsProgress {
+                    ProgressView()
+                        .tint(voiceStatusTint)
+                } else {
+                    Image(systemName: appState.voiceCallPhase.systemImage)
+                        .font(.title2.weight(.semibold))
+                        .foregroundStyle(voiceStatusTint)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(callOverviewTitle)
+                    .font(.title3.bold())
+                    .lineLimit(1)
+                Text(callOverviewDetail)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+
+            Spacer(minLength: 0)
+
+            Text(appState.voiceCallPhase.title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(voiceStatusTint)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 6)
+                .background(voiceStatusTint.opacity(0.12), in: Capsule())
+        }
+        .padding(16)
+        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: BikeGoGoStyle.cornerRadius))
+        .overlay {
+            RoundedRectangle(cornerRadius: BikeGoGoStyle.cornerRadius)
+                .stroke(voiceStatusTint.opacity(appState.hasActiveVoiceCall ? 0.3 : 0.12))
+        }
+        .animation(.easeInOut(duration: 0.2), value: appState.voiceCallPhase)
+    }
+
+    private var callOverviewTitle: String {
+        appState.activeVoiceCallContext?.targetName ?? "骑行语音"
+    }
+
+    private var callOverviewDetail: String {
+        if appState.hasActiveVoiceCall {
+            return appState.voiceCallStatusDetail
+        }
+        let groupCount = appState.accountClient.groups.count
+        let friendCount = appState.accountClient.friends.count
+        return "\(groupCount) 个小队 · \(friendCount) 位好友"
+    }
+
+    private var activeCallControls: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VoiceSectionHeader(title: "通话控制", value: participantCountText)
+
+            HStack(spacing: 12) {
+                Button {
+                    Task { await appState.toggleMute() }
+                } label: {
+                    Label(
+                        appState.voiceClient.isMuted ? "解除静音" : "静音",
+                        systemImage: appState.voiceClient.isMuted ? "mic.slash.fill" : "mic.fill"
+                    )
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .buttonBorderShape(.roundedRectangle(radius: BikeGoGoStyle.cornerRadius))
+                .tint(appState.voiceClient.isMuted ? BikeGoGoStyle.warning : BikeGoGoStyle.brand)
+                .disabled(!appState.voiceClient.isConnected)
+
+                Button(role: .destructive) {
+                    Task { await appState.leaveVoiceRoom() }
+                } label: {
+                    Label(activeCallActionTitle, systemImage: "phone.down.fill")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .buttonBorderShape(.roundedRectangle(radius: BikeGoGoStyle.cornerRadius))
+                .tint(BikeGoGoStyle.danger)
+            }
+
+            if appState.voiceClient.isConnected {
+                Divider()
+
+                HStack(alignment: .top, spacing: 18) {
+                    VoiceAudioInfo(
+                        title: "音频输出",
+                        value: appState.voiceClient.audioRouteName,
+                        systemImage: "speaker.wave.2.fill"
+                    )
+                    VoiceAudioInfo(
+                        title: "环境降噪",
+                        value: appState.voiceClient.noiseCancellationName,
+                        systemImage: "waveform.badge.minus"
+                    )
+                }
+            }
+        }
+    }
+
+    private var participantSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VoiceSectionHeader(
+                title: "通话成员",
+                value: "\(appState.voiceClient.participants.count) 人"
+            )
+
+            if appState.voiceClient.participants.isEmpty {
+                HStack(spacing: 12) {
+                    ProgressView()
+                    Text("正在同步成员状态")
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+                .padding(16)
+                .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: BikeGoGoStyle.cornerRadius))
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(appState.voiceClient.participants.enumerated()), id: \.element.id) { index, participant in
+                        VoiceParticipantRow(participant: participant)
+                        if index < appState.voiceClient.participants.count - 1 {
+                            Divider().padding(.leading, 60)
+                        }
+                    }
+                }
+                .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: BikeGoGoStyle.cornerRadius))
+            }
+        }
+    }
+
+    private var targetDirectory: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Picker("语音对象", selection: $scope) {
+                ForEach(VoiceScope.allCases) { option in
+                    Text(option.rawValue).tag(option)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            switch scope {
+            case .group:
+                groupDirectory
+            case .friend:
+                friendDirectory
+            }
+        }
+    }
+
+    private var groupDirectory: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VoiceSectionHeader(
+                title: "我的小队",
+                value: "\(appState.accountClient.groups.count) 个"
+            )
+
+            if appState.accountClient.groups.isEmpty {
+                VoiceEmptyState(
+                    title: "暂无小队",
+                    systemImage: "person.3.sequence",
+                    actionTitle: "创建小队"
+                ) {
+                    isCreatingGroup = true
+                }
+            } else {
+                ForEach(appState.accountClient.groups) { group in
+                    HStack(spacing: 12) {
+                        NavigationLink {
+                            GroupDetailView(account: appState.accountClient, groupID: group.id)
+                        } label: {
+                            VoiceTargetLabel(
+                                title: group.name,
+                                subtitle: "\(group.members.count) 位成员",
+                                systemImage: "person.3.fill"
+                            )
+                        }
+                        .buttonStyle(.plain)
+
+                        VoiceCallButton(name: group.name) {
+                            await appState.startVoiceCall(targetID: group.id)
+                        }
+                    }
+                    .padding(14)
+                    .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: BikeGoGoStyle.cornerRadius))
+                }
+            }
+        }
+    }
+
+    private var friendDirectory: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VoiceSectionHeader(
+                title: "骑行好友",
+                value: "\(appState.accountClient.friends.count) 位"
+            )
+
+            if appState.accountClient.friends.isEmpty {
+                VoiceEmptyState(title: "暂无好友", systemImage: "person.crop.circle.badge.plus")
+            } else {
+                ForEach(appState.accountClient.friends) { friend in
+                    HStack(spacing: 12) {
+                        VoiceTargetLabel(
+                            title: friend.displayName,
+                            subtitle: "好友语音",
+                            systemImage: "person.fill"
+                        )
+
+                        VoiceCallButton(name: friend.displayName) {
+                            await appState.startVoiceCall(targetID: friend.id)
+                        }
+                    }
+                    .padding(14)
+                    .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: BikeGoGoStyle.cornerRadius))
+                }
             }
         }
     }
@@ -215,110 +311,197 @@ struct VoiceRoomView: View {
         case .connected, .reconnecting, .waitingForParticipants:
             "结束语音"
         case .idle:
-            "发起语音"
+            "结束语音"
         }
+    }
+
+    private var participantCountText: String {
+        guard appState.voiceClient.isConnected else { return appState.voiceCallPhase.title }
+        return "\(appState.voiceClient.remoteParticipantCount + 1) 人在线"
     }
 
     private var voiceStatusTint: Color {
         switch appState.voiceCallPhase {
         case .connected:
-            .green
+            BikeGoGoStyle.brand
         case .preparing, .calling, .connecting, .syncingAudio, .waitingForParticipants:
-            .orange
+            BikeGoGoStyle.warning
         case .reconnecting:
             .yellow
         case .idle:
             .secondary
         }
     }
+}
 
-    private var voiceStatusPanel: some View {
-        HStack(spacing: 14) {
-            ZStack {
-                Circle()
-                    .fill(voiceStatusTint.opacity(0.14))
-                    .frame(width: 48, height: 48)
-                if appState.voiceCallPhase.showsProgress {
-                    ProgressView()
-                        .tint(voiceStatusTint)
-                } else {
-                    Image(systemName: appState.voiceCallPhase.systemImage)
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(voiceStatusTint)
-                }
-            }
+private struct VoiceSectionHeader: View {
+    let title: String
+    let value: String
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(appState.voiceCallPhase.title)
-                    .font(.headline)
-                    .foregroundStyle(voiceStatusTint)
-                Text(
-                    appState.voiceCallPhase == .idle
-                        ? selectedTargetName.map { "准备与\($0)通话" }
-                            ?? appState.voiceCallStatusDetail
-                        : appState.voiceCallStatusDetail
-                )
+    var body: some View {
+        HStack {
+            Text(title)
+                .font(.headline)
+            Spacer()
+            Text(value)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
-                .lineLimit(2)
+        }
+    }
+}
 
-                if appState.voiceCallPhase == .connected,
-                   appState.voiceClient.isMuted {
-                    Label("我的麦克风已静音", systemImage: "mic.slash.fill")
-                        .font(.caption)
-                        .foregroundStyle(.orange)
-                }
+private struct VoiceTargetLabel: View {
+    let title: String
+    let subtitle: String
+    let systemImage: String
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: systemImage)
+                .font(.headline)
+                .foregroundStyle(BikeGoGoStyle.brand)
+                .frame(width: 42, height: 42)
+                .background(BikeGoGoStyle.brand.opacity(0.12), in: RoundedRectangle(cornerRadius: BikeGoGoStyle.cornerRadius))
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
+
             Spacer(minLength: 0)
         }
-        .padding(16)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(voiceStatusTint.opacity(0.35), lineWidth: 1)
+        .contentShape(Rectangle())
+    }
+}
+
+private struct VoiceCallButton: View {
+    let name: String
+    let action: () async -> Void
+
+    var body: some View {
+        Button {
+            Task { await action() }
+        } label: {
+            Image(systemName: "phone.fill")
+                .font(.headline)
+                .frame(width: 42, height: 42)
         }
-        .padding(.vertical, 4)
-        .accessibilityElement(children: .combine)
+        .buttonStyle(.borderedProminent)
+        .buttonBorderShape(.roundedRectangle(radius: BikeGoGoStyle.cornerRadius))
+        .tint(BikeGoGoStyle.brand)
+        .accessibilityLabel("呼叫 \(name)")
+    }
+}
+
+private struct VoiceAudioInfo: View {
+    let title: String
+    let value: String
+    let systemImage: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: systemImage)
+                .foregroundStyle(BikeGoGoStyle.brand)
+                .frame(width: 20)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(value)
+                    .font(.caption.weight(.medium))
+                    .lineLimit(2)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct VoiceParticipantRow: View {
+    let participant: VoiceParticipantSnapshot
+
+    private var statusColor: Color {
+        if participant.isSpeaking { return BikeGoGoStyle.route }
+        if participant.connectionQuality.contains("较差")
+            || participant.connectionQuality.contains("中断") {
+            return BikeGoGoStyle.warning
+        }
+        return BikeGoGoStyle.brand
     }
 
-    @ViewBuilder
-    private var targetPicker: some View {
-        switch scope {
-        case .group:
-            Picker("选择小队", selection: $selectedGroupID) {
-                Text("请选择").tag(nil as String?)
-                ForEach(appState.accountClient.groups) { group in
-                    Text(group.name).tag(Optional(group.id))
-                }
-            }
-            .disabled(appState.voiceClient.isConnected || appState.isHandlingVoiceInvitation)
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack(alignment: .bottomTrailing) {
+                Image(systemName: "person.fill")
+                    .foregroundStyle(statusColor)
+                    .frame(width: 44, height: 44)
+                    .background(statusColor.opacity(0.12), in: RoundedRectangle(cornerRadius: BikeGoGoStyle.cornerRadius))
 
-        case .friend:
-            Picker("选择好友", selection: $selectedFriendID) {
-                Text("请选择").tag(nil as String?)
-                ForEach(appState.accountClient.friends) { friend in
-                    Text(friend.displayName).tag(Optional(friend.id))
-                }
+                Circle()
+                    .fill(statusColor)
+                    .frame(width: 10, height: 10)
+                    .overlay(Circle().stroke(Color(uiColor: .secondarySystemGroupedBackground), lineWidth: 2))
             }
-            .disabled(appState.voiceClient.isConnected || appState.isHandlingVoiceInvitation)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(participant.isLocal ? "\(participant.displayName)（我）" : participant.displayName)
+                    .font(.body.weight(.semibold))
+                Text("\(participant.connectionQuality) · \(participant.audioStatus)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 0)
+
+            Image(systemName: participant.isMuted ? "mic.slash.fill" : "mic.fill")
+                .foregroundStyle(participant.isMuted ? BikeGoGoStyle.warning : statusColor)
+                .frame(width: 34, height: 34)
         }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+    }
+}
+
+private struct VoiceEmptyState: View {
+    let title: String
+    let systemImage: String
+    var actionTitle: String?
+    var action: (() -> Void)?
+
+    init(
+        title: String,
+        systemImage: String,
+        actionTitle: String? = nil,
+        action: (() -> Void)? = nil
+    ) {
+        self.title = title
+        self.systemImage = systemImage
+        self.actionTitle = actionTitle
+        self.action = action
     }
 
-    private func chooseAvailableTargets() {
-        let groups = appState.accountClient.groups
-        let friends = appState.accountClient.friends
-
-        if !groups.contains(where: { $0.id == selectedGroupID }) {
-            selectedGroupID = groups.first?.id
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: systemImage)
+                .font(.title3)
+                .foregroundStyle(.secondary)
+            Text(title)
+                .foregroundStyle(.secondary)
+            Spacer()
+            if let actionTitle, let action {
+                Button(actionTitle, action: action)
+                    .buttonStyle(.bordered)
+                    .buttonBorderShape(.roundedRectangle(radius: BikeGoGoStyle.cornerRadius))
+                    .tint(BikeGoGoStyle.brand)
+            }
         }
-        if !friends.contains(where: { $0.id == selectedFriendID }) {
-            selectedFriendID = friends.first?.id
-        }
-        if groups.isEmpty, !friends.isEmpty {
-            scope = .friend
-        } else if friends.isEmpty, !groups.isEmpty {
-            scope = .group
-        }
+        .padding(18)
+        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: BikeGoGoStyle.cornerRadius))
     }
 }
 
@@ -361,6 +544,7 @@ private struct CreateGroupSheet: View {
 }
 
 private struct GroupDetailView: View {
+    @EnvironmentObject private var appState: AppState
     @ObservedObject var account: AccountClient
     let groupID: String
     @State private var showingDeleteConfirmation = false
@@ -372,6 +556,35 @@ private struct GroupDetailView: View {
     var body: some View {
         List {
             if let group {
+                Section {
+                    HStack(spacing: 14) {
+                        Image(systemName: "person.3.fill")
+                            .font(.title2)
+                            .foregroundStyle(BikeGoGoStyle.brand)
+                            .frame(width: 48, height: 48)
+                            .background(BikeGoGoStyle.brand.opacity(0.12), in: RoundedRectangle(cornerRadius: BikeGoGoStyle.cornerRadius))
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(group.name)
+                                .font(.headline)
+                            Text("\(group.members.count) 位成员")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    Button {
+                        Task { await appState.startVoiceCall(targetID: group.id) }
+                    } label: {
+                        Label("呼叫小队", systemImage: "phone.fill")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .buttonBorderShape(.roundedRectangle(radius: BikeGoGoStyle.cornerRadius))
+                    .tint(BikeGoGoStyle.brand)
+                    .disabled(appState.hasActiveVoiceCall || appState.isHandlingVoiceInvitation)
+                }
+
                 GroupMembersSection(account: account, group: group)
                 if group.isOwner {
                     GroupInviteSection(account: account, group: group)

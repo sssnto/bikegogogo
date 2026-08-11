@@ -72,7 +72,7 @@ actor HealthKitRideImporter {
             let query = HKSampleQuery(
                 sampleType: .workoutType(),
                 predicate: predicate,
-                limit: 200,
+                limit: HKObjectQueryNoLimit,
                 sortDescriptors: [sort]
             ) { _, samples, error in
                 if let error {

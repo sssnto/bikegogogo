@@ -50,8 +50,8 @@ struct RideDetailView: View {
     }
 
     var body: some View {
-        List {
-            Section {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 24) {
                 AnimatedRideRouteMap(
                     coordinates: coordinates,
                     camera: camera,
@@ -60,157 +60,93 @@ struct RideDetailView: View {
                     onReplay: startRoutePlayback
                 )
                 .frame(height: 260)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .listRowInsets(EdgeInsets())
-            }
+                .clipShape(RoundedRectangle(cornerRadius: BikeGoGoStyle.cornerRadius))
 
-            Section("统计") {
-                metricRow("距离", String(format: "%.2f km", ride.metrics.distanceKilometers))
-                metricRow("均速", String(format: "%.1f km/h", ride.metrics.averageSpeedKilometersPerHour))
-                metricRow("最高速度", String(format: "%.1f km/h", ride.metrics.maxSpeedKilometersPerHour))
-                metricRow("爬升", String(format: "%.0f m", ride.metrics.elevationGainMeters))
-                metricRow("骑行时间", durationText(ride.metrics.elapsedDurationSeconds))
-                metricRow("移动时间", durationText(ride.metrics.movingDurationSeconds))
-                if let heartRate = ride.metrics.averageHeartRate {
-                    metricRow("平均心率", "\(heartRate) bpm")
-                }
-                if let heartRate = ride.metrics.maxHeartRate {
-                    metricRow("最高心率", "\(heartRate) bpm")
-                }
-                if let energy = ride.metrics.activeEnergyKilocalories {
-                    metricRow("动态热量", String(format: "%.0f kcal", energy))
-                }
-                if let energy = ride.metrics.totalEnergyKilocalories {
-                    metricRow("总热量", String(format: "%.0f kcal", energy))
-                }
-                if let cadence = ride.metrics.averageCadenceRPM {
-                    metricRow("平均踏频", String(format: "%.0f rpm", cadence))
-                }
-                if let cadence = ride.metrics.maxCadenceRPM {
-                    metricRow("最高踏频", String(format: "%.0f rpm", cadence))
-                }
-                if let power = ride.metrics.averageCyclingPowerWatts {
-                    metricRow("平均功率", String(format: "%.0f W", power))
-                }
-                if let power = ride.metrics.maxCyclingPowerWatts {
-                    metricRow("最高功率", String(format: "%.0f W", power))
-                }
-            }
+                rideIdentity
 
-            if let weather = ride.weather {
-                Section("骑行天气") {
-                    Label(
-                        "\(Int(weather.temperatureCelsius.rounded()))° · \(weather.conditionText)",
-                        systemImage: weather.symbolName
-                    )
-                    if let apparent = weather.apparentTemperatureCelsius {
-                        metricRow("体感温度", "\(Int(apparent.rounded()))°")
+                RideDetailSectionHeader(title: "本次骑行", value: nil)
+                LazyVGrid(
+                    columns: [
+                        GridItem(.flexible(), spacing: 12),
+                        GridItem(.flexible(), spacing: 12)
+                    ],
+                    spacing: 12
+                ) {
+                    ForEach(primaryMetrics) { metric in
+                        RideDetailMetricCard(metric: metric)
                     }
-                    if let humidity = weather.relativeHumidityPercent {
-                        metricRow("相对湿度", "\(Int(humidity.rounded()))%")
-                    }
-                    if let windSpeed = weather.windSpeedKilometersPerHour {
-                        metricRow("风速", weatherWindText(weather, speed: windSpeed))
-                    }
-                    metricRow(
-                        "记录时间",
-                        weather.capturedAt.formatted(
-                            date: .omitted,
-                            time: .shortened
+                }
+
+                detailRowsSection(title: "训练数据", rows: performanceRows)
+
+                if let weather = ride.weather {
+                    weatherSection(weather)
+                }
+
+                VStack(alignment: .leading, spacing: 12) {
+                    RideDetailSectionHeader(title: "心率", value: heartRateSummary)
+
+                    if heartRateSamples.count > 1 {
+                        RideMetricChart(
+                            samples: heartRateSamples,
+                            unit: "bpm",
+                            color: BikeGoGoStyle.danger
                         )
-                    )
-                    if let sourceURL = appState.weatherAttributionURL {
-                        Link(destination: sourceURL) {
-                            Label("Apple 天气数据来源", systemImage: "info.circle")
-                        }
+                    } else {
+                        missingHeartRate
                     }
                 }
-            }
+                .padding(16)
+                .background(
+                    Color(uiColor: .secondarySystemGroupedBackground),
+                    in: RoundedRectangle(cornerRadius: BikeGoGoStyle.cornerRadius)
+                )
 
-            Section("心率") {
-                if heartRateSamples.count > 1 {
-                    RideMetricChart(
-                        samples: heartRateSamples,
-                        unit: "bpm",
-                        color: .red
-                    )
-                } else {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Label("这条记录还没有心率采样", systemImage: "heart.slash")
-                            .font(.headline)
-                        Text(heartRateUnavailableMessage)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                if speedSamples.count > 1 {
+                    VStack(alignment: .leading, spacing: 12) {
+                        RideDetailSectionHeader(
+                            title: "速度",
+                            value: String(
+                                format: "平均 %.1f km/h",
+                                ride.metrics.averageSpeedKilometersPerHour
+                            )
+                        )
 
-                        Button {
-                            Task {
-                                await appState.importHealthKitRides(
-                                    since: ride.startedAt.addingTimeInterval(-10 * 60)
-                                )
-                                await appState.syncRides()
-                            }
-                        } label: {
-                            if appState.isImportingHealthKit {
-                                ProgressView("正在读取苹果健身")
-                            } else {
-                                Label("从苹果健身补全本次数据", systemImage: "heart.text.square")
-                            }
-                        }
-                        .disabled(appState.isImportingHealthKit)
-
-                        if let message = appState.healthKitImportMessage {
-                            Text(message)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
+                        RideMetricChart(
+                            samples: speedSamples,
+                            unit: "km/h",
+                            color: BikeGoGoStyle.speed
+                        )
                     }
-                    .padding(.vertical, 6)
-                }
-            }
-
-            if speedSamples.count > 1 {
-                Section("速度") {
-                    RideMetricChart(
-                        samples: speedSamples,
-                        unit: "km/h",
-                        color: .cyan
+                    .padding(16)
+                    .background(
+                        Color(uiColor: .secondarySystemGroupedBackground),
+                        in: RoundedRectangle(cornerRadius: BikeGoGoStyle.cornerRadius)
                     )
                 }
-            }
 
-            Section("记录") {
-                metricRow("开始时间", ride.startedAt.formatted(date: .abbreviated, time: .shortened))
-                metricRow("数据来源", sourceText)
-            }
+                detailRowsSection(
+                    title: "记录信息",
+                    rows: [
+                        RideDetailRowData(
+                            title: "开始时间",
+                            value: ride.startedAt.formatted(
+                                date: .abbreviated,
+                                time: .shortened
+                            )
+                        ),
+                        RideDetailRowData(title: "数据来源", value: sourceText)
+                    ]
+                )
 
-            Section("分享") {
-                NavigationLink {
-                    RideShareComposerView(ride: ride)
-                } label: {
-                    Label("制作骑行分享作品", systemImage: "photo.on.rectangle.angled")
-                }
+                shareAndExportActions
             }
-
-            Section("导出") {
-                Button {
-                    Task {
-                        isExporting = true
-                        exportedURL = await appState.exportGPX(for: ride)
-                        isExporting = false
-                    }
-                } label: {
-                    Label(isExporting ? "正在生成 GPX" : "生成 GPX 文件", systemImage: "square.and.arrow.up")
-                }
-                .disabled(isExporting || ride.points.isEmpty)
-
-                if let exportedURL {
-                    ShareLink(item: exportedURL) {
-                        Label("分享 GPX", systemImage: "doc.badge.arrow.up")
-                    }
-                }
-            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
         }
+        .background(Color(uiColor: .systemGroupedBackground))
         .navigationTitle(ride.title)
+        .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             guard !hasStartedRoutePlayback else { return }
             hasStartedRoutePlayback = true
@@ -230,6 +166,320 @@ struct RideDetailView: View {
         }
     }
 
+    private var rideIdentity: some View {
+        HStack(spacing: 12) {
+            Image(systemName: sourceIcon)
+                .font(.headline)
+                .foregroundStyle(BikeGoGoStyle.brand)
+                .frame(width: 44, height: 44)
+                .background(
+                    BikeGoGoStyle.brand.opacity(0.12),
+                    in: RoundedRectangle(cornerRadius: BikeGoGoStyle.cornerRadius)
+                )
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(ride.startedAt.formatted(date: .complete, time: .omitted))
+                    .font(.headline)
+                Text(
+                    "\(ride.startedAt.formatted(date: .omitted, time: .shortened)) · \(sourceText)"
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 0)
+
+            if let weather = ride.weather {
+                Label(
+                    "\(Int(weather.temperatureCelsius.rounded()))°",
+                    systemImage: weather.symbolName
+                )
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(BikeGoGoStyle.speed)
+            }
+        }
+    }
+
+    private var primaryMetrics: [RideDetailMetric] {
+        var metrics = [
+            RideDetailMetric(
+                title: "距离",
+                value: String(format: "%.2f", ride.metrics.distanceKilometers),
+                unit: "km",
+                systemImage: "point.topleft.down.to.point.bottomright.curvepath",
+                tint: BikeGoGoStyle.brand
+            ),
+            RideDetailMetric(
+                title: "移动时间",
+                value: durationText(ride.metrics.movingDurationSeconds),
+                unit: nil,
+                systemImage: "timer",
+                tint: BikeGoGoStyle.warning
+            ),
+            RideDetailMetric(
+                title: "平均速度",
+                value: String(
+                    format: "%.1f",
+                    ride.metrics.averageSpeedKilometersPerHour
+                ),
+                unit: "km/h",
+                systemImage: "speedometer",
+                tint: BikeGoGoStyle.speed
+            ),
+            RideDetailMetric(
+                title: "累计爬升",
+                value: String(format: "%.0f", ride.metrics.elevationGainMeters),
+                unit: "m",
+                systemImage: "mountain.2.fill",
+                tint: BikeGoGoStyle.route
+            ),
+            RideDetailMetric(
+                title: "最高速度",
+                value: String(
+                    format: "%.1f",
+                    ride.metrics.maxSpeedKilometersPerHour
+                ),
+                unit: "km/h",
+                systemImage: "gauge.with.dots.needle.67percent",
+                tint: BikeGoGoStyle.speed
+            )
+        ]
+
+        if let heartRate = ride.metrics.averageHeartRate {
+            metrics.append(RideDetailMetric(
+                title: "平均心率",
+                value: "\(heartRate)",
+                unit: "bpm",
+                systemImage: "heart.fill",
+                tint: BikeGoGoStyle.danger
+            ))
+        }
+        return metrics
+    }
+
+    private var performanceRows: [RideDetailRowData] {
+        var rows = [
+            RideDetailRowData(
+                title: "骑行时间",
+                value: durationText(ride.metrics.elapsedDurationSeconds)
+            )
+        ]
+        if let value = ride.metrics.maxHeartRate {
+            rows.append(RideDetailRowData(title: "最高心率", value: "\(value) bpm"))
+        }
+        if let value = ride.metrics.activeEnergyKilocalories {
+            rows.append(RideDetailRowData(
+                title: "动态热量",
+                value: String(format: "%.0f kcal", value)
+            ))
+        }
+        if let value = ride.metrics.totalEnergyKilocalories {
+            rows.append(RideDetailRowData(
+                title: "总热量",
+                value: String(format: "%.0f kcal", value)
+            ))
+        }
+        if let value = ride.metrics.averageCadenceRPM {
+            rows.append(RideDetailRowData(
+                title: "平均踏频",
+                value: String(format: "%.0f rpm", value)
+            ))
+        }
+        if let value = ride.metrics.maxCadenceRPM {
+            rows.append(RideDetailRowData(
+                title: "最高踏频",
+                value: String(format: "%.0f rpm", value)
+            ))
+        }
+        if let value = ride.metrics.averageCyclingPowerWatts {
+            rows.append(RideDetailRowData(
+                title: "平均功率",
+                value: String(format: "%.0f W", value)
+            ))
+        }
+        if let value = ride.metrics.maxCyclingPowerWatts {
+            rows.append(RideDetailRowData(
+                title: "最高功率",
+                value: String(format: "%.0f W", value)
+            ))
+        }
+        return rows
+    }
+
+    private var heartRateSummary: String? {
+        guard let average = ride.metrics.averageHeartRate else { return nil }
+        if let maximum = ride.metrics.maxHeartRate {
+            return "平均 \(average) · 最高 \(maximum) bpm"
+        }
+        return "平均 \(average) bpm"
+    }
+
+    private var sourceIcon: String {
+        switch ride.source {
+        case .iPhone: "iphone"
+        case .appleWatch: "applewatch"
+        case .merged: "arrow.triangle.merge"
+        }
+    }
+
+    private var missingHeartRate: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("暂无心率采样", systemImage: "heart.slash")
+                .font(.headline)
+            Text(heartRateUnavailableMessage)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            Button {
+                Task {
+                    await appState.importHealthKitRides(
+                        since: ride.startedAt.addingTimeInterval(-10 * 60)
+                    )
+                    await appState.syncRides()
+                }
+            } label: {
+                if appState.isImportingHealthKit {
+                    ProgressView("正在读取苹果健身")
+                } else {
+                    Label("从苹果健身补全数据", systemImage: "heart.text.square")
+                }
+            }
+            .buttonStyle(.bordered)
+            .buttonBorderShape(
+                .roundedRectangle(radius: BikeGoGoStyle.cornerRadius)
+            )
+            .tint(BikeGoGoStyle.brand)
+            .disabled(appState.isImportingHealthKit)
+
+            if let message = appState.healthKitImportMessage {
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func weatherSection(_ weather: RideWeatherSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            RideDetailSectionHeader(
+                title: "骑行天气",
+                value: weather.conditionText
+            )
+
+            HStack(spacing: 12) {
+                RideWeatherMetric(
+                    title: "气温",
+                    value: "\(Int(weather.temperatureCelsius.rounded()))°",
+                    systemImage: weather.symbolName
+                )
+                if let humidity = weather.relativeHumidityPercent {
+                    RideWeatherMetric(
+                        title: "湿度",
+                        value: "\(Int(humidity.rounded()))%",
+                        systemImage: "humidity.fill"
+                    )
+                }
+                if let windSpeed = weather.windSpeedKilometersPerHour {
+                    RideWeatherMetric(
+                        title: "风况",
+                        value: weatherWindText(weather, speed: windSpeed),
+                        systemImage: "wind"
+                    )
+                }
+            }
+
+            if let sourceURL = appState.weatherAttributionURL {
+                Link(destination: sourceURL) {
+                    Label("Apple 天气", systemImage: "info.circle")
+                        .font(.caption)
+                }
+            }
+        }
+        .padding(16)
+        .background(
+            Color(uiColor: .secondarySystemGroupedBackground),
+            in: RoundedRectangle(cornerRadius: BikeGoGoStyle.cornerRadius)
+        )
+    }
+
+    private func detailRowsSection(
+        title: String,
+        rows: [RideDetailRowData]
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            RideDetailSectionHeader(title: title, value: nil)
+
+            VStack(spacing: 0) {
+                ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
+                    RideDetailMetricRow(row: row)
+                    if index < rows.count - 1 {
+                        Divider()
+                    }
+                }
+            }
+            .padding(.horizontal, 14)
+            .background(
+                Color(uiColor: .secondarySystemGroupedBackground),
+                in: RoundedRectangle(cornerRadius: BikeGoGoStyle.cornerRadius)
+            )
+        }
+    }
+
+    private var shareAndExportActions: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            RideDetailSectionHeader(title: "分享与导出", value: nil)
+
+            NavigationLink {
+                RideShareComposerView(ride: ride)
+            } label: {
+                Label(
+                    "制作骑行分享作品",
+                    systemImage: "photo.on.rectangle.angled"
+                )
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .buttonBorderShape(
+                .roundedRectangle(radius: BikeGoGoStyle.cornerRadius)
+            )
+            .tint(BikeGoGoStyle.brand)
+
+            HStack(spacing: 12) {
+                Button {
+                    Task {
+                        isExporting = true
+                        exportedURL = await appState.exportGPX(for: ride)
+                        isExporting = false
+                    }
+                } label: {
+                    Label(
+                        isExporting ? "正在生成" : "生成 GPX",
+                        systemImage: "doc.badge.plus"
+                    )
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .buttonBorderShape(
+                    .roundedRectangle(radius: BikeGoGoStyle.cornerRadius)
+                )
+                .disabled(isExporting || ride.points.isEmpty)
+
+                if let exportedURL {
+                    ShareLink(item: exportedURL) {
+                        Label("分享 GPX", systemImage: "square.and.arrow.up")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .buttonBorderShape(
+                        .roundedRectangle(radius: BikeGoGoStyle.cornerRadius)
+                    )
+                }
+            }
+        }
+        .padding(.bottom, 18)
+    }
+
     private var routePlaybackDuration: TimeInterval {
         AnimatedRideRouteMap.playbackDuration(for: coordinates)
     }
@@ -243,15 +493,6 @@ struct RideDetailView: View {
         routePlaybackToken = UUID()
     }
 
-    private func metricRow(_ title: String, _ value: String) -> some View {
-        HStack {
-            Text(title)
-            Spacer()
-            Text(value)
-                .foregroundStyle(.secondary)
-        }
-    }
-
     private func weatherWindText(
         _ weather: RideWeatherSnapshot,
         speed: Double
@@ -261,7 +502,9 @@ struct RideDetailView: View {
         }
         let directions = ["北", "东北", "东", "东南", "南", "西南", "西", "西北"]
         let normalized = degrees.truncatingRemainder(dividingBy: 360)
-        let index = Int(((normalized + 22.5) / 45).rounded(.down)) % directions.count
+        let index = Int(
+            ((normalized + 22.5) / 45).rounded(.down)
+        ) % directions.count
         return String(format: "%@风 %.0f km/h", directions[index], speed)
     }
 
@@ -293,6 +536,107 @@ struct RideDetailView: View {
         case .appleWatch, .merged:
             "苹果健身没有返回这次训练的心率采样，请检查 BikeGoGo 的健康读取权限。"
         }
+    }
+}
+
+private struct RideDetailMetric: Identifiable {
+    var id: String { title }
+    let title: String
+    let value: String
+    let unit: String?
+    let systemImage: String
+    let tint: Color
+}
+
+private struct RideDetailRowData {
+    let title: String
+    let value: String
+}
+
+private struct RideDetailSectionHeader: View {
+    let title: String
+    let value: String?
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(title)
+                .font(.headline)
+            Spacer()
+            if let value {
+                Text(value)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+    }
+}
+
+private struct RideDetailMetricCard: View {
+    let metric: RideDetailMetric
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(metric.title, systemImage: metric.systemImage)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+
+            HStack(alignment: .lastTextBaseline, spacing: 4) {
+                Text(metric.value)
+                    .font(.title2.bold())
+                    .monospacedDigit()
+                    .foregroundStyle(metric.tint)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+                if let unit = metric.unit {
+                    Text(unit)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 78, alignment: .leading)
+        .padding(14)
+        .background(
+            Color(uiColor: .secondarySystemGroupedBackground),
+            in: RoundedRectangle(cornerRadius: BikeGoGoStyle.cornerRadius)
+        )
+    }
+}
+
+private struct RideDetailMetricRow: View {
+    let row: RideDetailRowData
+
+    var body: some View {
+        HStack {
+            Text(row.title)
+            Spacer(minLength: 16)
+            Text(row.value)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.trailing)
+        }
+        .font(.subheadline)
+        .padding(.vertical, 12)
+    }
+}
+
+private struct RideWeatherMetric: View {
+    let title: String
+    let value: String
+    let systemImage: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Label(title, systemImage: systemImage)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.subheadline.weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

@@ -21,7 +21,7 @@ enum AppConfiguration {
         }
 
         return URL(
-            string: "https://github.com/sssnto/bikegogogo/blob/main/docs/PRIVACY_POLICY.md"
+            string: "https://bikegogogo-privacy.sssnto.cn"
         )!
     }
 }

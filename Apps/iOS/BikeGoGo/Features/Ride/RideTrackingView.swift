@@ -35,19 +35,34 @@ struct RideTrackingView: View {
         } ?? []
     }
 
+    private var isActiveRide: Bool {
+        appState.currentRide.state == .recording
+            || appState.currentRide.state == .paused
+    }
+
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                rideMap
+            GeometryReader { geometry in
+                VStack(spacing: 0) {
+                    rideMap
+                        .frame(height: mapHeight(for: geometry.size.height))
 
-                metricsPanel
-                    .padding(16)
+                    if isActiveRide {
+                        activeRideDashboard
+                    } else {
+                        preRideDashboard
+                    }
 
-                controls
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 16)
+                    controls
+                        .padding(.horizontal, 20)
+                        .padding(.top, 12)
+                        .padding(.bottom, 14)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .background(Color(.systemGroupedBackground))
             }
-            .navigationTitle("BikeGoGo")
+            .navigationTitle(isActiveRide ? "正在骑行" : "骑行")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     if appState.currentRide.state == .idle || appState.currentRide.state == .finished {
@@ -186,11 +201,10 @@ struct RideTrackingView: View {
 
             if coordinates.count > 1 {
                 MapPolyline(coordinates: coordinates)
-                    .stroke(.green, lineWidth: 5)
+                    .stroke(BikeGoGoStyle.route, lineWidth: 5)
             }
         }
         .frame(maxWidth: .infinity)
-        .frame(height: 320)
         .overlay(alignment: .topLeading) {
             VStack(alignment: .leading, spacing: 6) {
                 if let locationStatus {
@@ -284,6 +298,13 @@ struct RideTrackingView: View {
 
     private func teamStatus(for userID: String) -> TeamRideMemberStatus? {
         appState.teamRideMemberStatuses.first { $0.userID == userID }
+    }
+
+    private func mapHeight(for availableHeight: CGFloat) -> CGFloat {
+        if isActiveRide {
+            return min(max(availableHeight * 0.43, 230), 330)
+        }
+        return min(max(availableHeight * 0.52, 260), 390)
     }
 
     private var selectedSOSGroup: AppGroup? {
@@ -793,30 +814,192 @@ struct RideTrackingView: View {
             : "\(hours) 小时 \(remainingMinutes) 分钟"
     }
 
-    private var metricsPanel: some View {
+    private var preRideDashboard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .center) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("准备骑行")
+                        .font(.title2.bold())
+                    Text(preRideReady ? "定位状态良好" : "正在完成定位准备")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Image(systemName: preRideReady ? "checkmark.circle.fill" : "circle.dotted")
+                    .font(.title2)
+                    .foregroundStyle(preRideReady ? BikeGoGoStyle.brand : BikeGoGoStyle.warning)
+                    .accessibilityLabel(preRideReady ? "骑行准备完成" : "正在准备骑行")
+            }
+
+            HStack(spacing: 0) {
+                RideReadinessItem(
+                    title: "GPS",
+                    value: gpsReadiness.value,
+                    systemImage: gpsReadiness.icon,
+                    color: gpsReadiness.color
+                )
+
+                Divider()
+                    .frame(height: 42)
+
+                RideReadinessItem(
+                    title: "天气",
+                    value: weatherReadiness.value,
+                    systemImage: weatherReadiness.icon,
+                    color: weatherReadiness.color
+                )
+
+                Divider()
+                    .frame(height: 42)
+
+                RideReadinessItem(
+                    title: "小队",
+                    value: teamReadiness.value,
+                    systemImage: teamReadiness.icon,
+                    color: teamReadiness.color
+                )
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var activeRideDashboard: some View {
         let metrics = appState.currentRide.metrics
 
         return TimelineView(.periodic(from: .now, by: 1)) { context in
-            Grid(horizontalSpacing: 12, verticalSpacing: 12) {
-                GridRow {
-                    MetricTile(title: "距离", value: String(format: "%.2f km", metrics.distanceKilometers))
-                    MetricTile(title: "当前速度", value: String(format: "%.1f km/h", appState.currentSpeedMetersPerSecond * 3.6))
-                }
+            VStack(spacing: 12) {
+                HStack(alignment: .center, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text("当前速度")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        HStack(alignment: .lastTextBaseline, spacing: 6) {
+                            Text(String(
+                                format: "%.1f",
+                                appState.currentSpeedMetersPerSecond * 3.6
+                            ))
+                            .font(.system(size: 52, weight: .bold, design: .rounded))
+                            .monospacedDigit()
+                            .foregroundStyle(BikeGoGoStyle.speed)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.72)
 
-                GridRow {
-                    MetricTile(title: "骑行时间", value: durationText(appState.rideElapsedDuration(at: context.date)))
-                    MetricTile(title: "平均速度", value: String(format: "%.1f km/h", metrics.averageSpeedKilometersPerHour))
-                }
+                            Text("km/h")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
 
-                GridRow {
-                    MetricTile(
-                        title: "Watch 心率",
-                        value: appState.watchHeartRate > 0 ? "\(Int(appState.watchHeartRate)) bpm" : "-- bpm"
+                    Spacer(minLength: 0)
+
+                    RideStateBadge(
+                        isPaused: appState.currentRide.state == .paused,
+                        isAutomatic: appState.isAutomaticallyPaused
                     )
-                    MetricTile(title: "累计爬升", value: String(format: "%.0f m", metrics.elevationGainMeters))
                 }
+
+                Divider()
+
+                HStack(spacing: 12) {
+                    RideLiveMetric(
+                        title: "距离",
+                        value: String(format: "%.2f", metrics.distanceKilometers),
+                        unit: "km"
+                    )
+                    RideLiveMetric(
+                        title: "骑行时间",
+                        value: durationText(appState.rideElapsedDuration(at: context.date)),
+                        unit: nil
+                    )
+                    RideLiveMetric(
+                        title: "心率",
+                        value: appState.watchHeartRate > 0
+                            ? "\(Int(appState.watchHeartRate))"
+                            : "--",
+                        unit: "bpm"
+                    )
+                }
+
+                HStack(spacing: 18) {
+                    Label(
+                        String(format: "均速 %.1f km/h", metrics.averageSpeedKilometersPerHour),
+                        systemImage: "speedometer"
+                    )
+                    Label(
+                        String(format: "爬升 %.0f m", metrics.elevationGainMeters),
+                        systemImage: "mountain.2.fill"
+                    )
+                    Spacer(minLength: 0)
+                }
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
             }
+            .padding(.horizontal, 20)
+            .padding(.top, 14)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    private var preRideReady: Bool {
+        let authorized = locationAuthorizationStatusIsAuthorized
+        let accurate = appState.locationAccuracyMeters.map {
+            $0 <= RideLocationFilter.maximumTrackingHorizontalAccuracyMeters
+        } ?? false
+        return authorized && accurate
+    }
+
+    private var locationAuthorizationStatusIsAuthorized: Bool {
+        appState.locationAuthorizationStatus == .authorizedAlways
+            || appState.locationAuthorizationStatus == .authorizedWhenInUse
+    }
+
+    private var gpsReadiness: (
+        value: String,
+        icon: String,
+        color: Color
+    ) {
+        guard locationAuthorizationStatusIsAuthorized else {
+            return ("未授权", "location.slash.fill", BikeGoGoStyle.danger)
+        }
+        guard let accuracy = appState.locationAccuracyMeters else {
+            return ("定位中", "location.magnifyingglass", BikeGoGoStyle.warning)
+        }
+        if accuracy <= RideLocationFilter.maximumTrackingHorizontalAccuracyMeters {
+            return ("±\(Int(accuracy.rounded())) m", "location.fill", BikeGoGoStyle.brand)
+        }
+        return ("信号较弱", "location.slash.fill", BikeGoGoStyle.warning)
+    }
+
+    private var weatherReadiness: (
+        value: String,
+        icon: String,
+        color: Color
+    ) {
+        if let weather = appState.currentWeather {
+            return (
+                "\(Int(weather.temperatureCelsius.rounded()))° \(weather.conditionText)",
+                weather.symbolName,
+                BikeGoGoStyle.speed
+            )
+        }
+        return appState.isRefreshingWeather
+            ? ("更新中", "cloud.sun", BikeGoGoStyle.warning)
+            : ("暂无", "cloud.slash", .secondary)
+    }
+
+    private var teamReadiness: (
+        value: String,
+        icon: String,
+        color: Color
+    ) {
+        let count = appState.accountClient.groups.count
+        return count == 0
+            ? ("个人", "person.fill", .secondary)
+            : ("\(count) 个可用", "person.3.fill", BikeGoGoStyle.brand)
     }
 
     private var controls: some View {
@@ -831,6 +1014,8 @@ struct RideTrackingView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
+                .buttonBorderShape(.roundedRectangle(radius: BikeGoGoStyle.cornerRadius))
+                .tint(BikeGoGoStyle.brand)
 
             case .recording:
                 Button {
@@ -841,6 +1026,7 @@ struct RideTrackingView: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.large)
+                .buttonBorderShape(.roundedRectangle(radius: BikeGoGoStyle.cornerRadius))
 
                 Button(role: .destructive) {
                     isConfirmingFinish = true
@@ -850,7 +1036,8 @@ struct RideTrackingView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
-                .tint(.red)
+                .buttonBorderShape(.roundedRectangle(radius: BikeGoGoStyle.cornerRadius))
+                .tint(BikeGoGoStyle.danger)
 
             case .paused:
                 Button {
@@ -864,6 +1051,8 @@ struct RideTrackingView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
+                .buttonBorderShape(.roundedRectangle(radius: BikeGoGoStyle.cornerRadius))
+                .tint(BikeGoGoStyle.brand)
 
                 Button(role: .destructive) {
                     isConfirmingFinish = true
@@ -873,7 +1062,8 @@ struct RideTrackingView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
-                .tint(.red)
+                .buttonBorderShape(.roundedRectangle(radius: BikeGoGoStyle.cornerRadius))
+                .tint(BikeGoGoStyle.danger)
             }
         }
     }
@@ -884,6 +1074,89 @@ struct RideTrackingView: View {
         let minutes = (totalSeconds % 3_600) / 60
         let seconds = totalSeconds % 60
         return String(format: "%02d:%02d:%02d", hours, minutes, seconds)
+    }
+}
+
+private struct RideReadinessItem: View {
+    let title: String
+    let value: String
+    let systemImage: String
+    let color: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Label(title, systemImage: systemImage)
+                .font(.caption)
+                .foregroundStyle(color)
+                .lineLimit(1)
+            Text(value)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 10)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+private struct RideLiveMetric: View {
+    let title: String
+    let value: String
+    let unit: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            HStack(alignment: .lastTextBaseline, spacing: 3) {
+                Text(value)
+                    .font(.title3.bold())
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+                if let unit {
+                    Text(unit)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+private struct RideStateBadge: View {
+    let isPaused: Bool
+    let isAutomatic: Bool
+
+    private var title: String {
+        guard isPaused else { return "骑行中" }
+        return isAutomatic ? "自动暂停" : "已暂停"
+    }
+
+    private var icon: String {
+        isPaused ? "pause.fill" : "record.circle.fill"
+    }
+
+    private var color: Color {
+        isPaused ? BikeGoGoStyle.warning : BikeGoGoStyle.route
+    }
+
+    var body: some View {
+        Label(title, systemImage: icon)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(color)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(
+                color.opacity(0.12),
+                in: RoundedRectangle(cornerRadius: BikeGoGoStyle.cornerRadius)
+            )
+            .accessibilityElement(children: .combine)
     }
 }
 
@@ -1310,26 +1583,5 @@ private struct TeamRideStatusSheet: View {
         return remainingMinutes == 0
             ? "\(hours) 小时"
             : "\(hours) 小时 \(remainingMinutes) 分钟"
-    }
-}
-
-private struct MetricTile: View {
-    var title: String
-    var value: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Text(value)
-                .font(.title3)
-                .fontWeight(.semibold)
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
     }
 }
