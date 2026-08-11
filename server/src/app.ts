@@ -39,6 +39,8 @@ export type AppConfig = {
   databaseUrl?: string;
   appleBundleId: string;
   sessionTTLDays: number;
+  trustProxy?: boolean | number | string;
+  revision?: string;
   appleIdentityVerifier?: AppleIdentityVerifier;
   notificationSenders?: NotificationSender[];
 };
@@ -130,7 +132,11 @@ const publicMeetingPoint = (
 });
 
 export async function createApp(config: AppConfig) {
-  const app = Fastify({ logger: true, bodyLimit: 15 * 1024 * 1024 });
+  const app = Fastify({
+    logger: true,
+    bodyLimit: 15 * 1024 * 1024,
+    trustProxy: config.trustProxy ?? false
+  });
   const store = new DataStore(
     config.dataFile,
     config.sessionTTLDays * 24 * 60 * 60 * 1000,
@@ -143,6 +149,9 @@ export async function createApp(config: AppConfig) {
   const meetingPoints = new MeetingPointStore();
   await store.initialize();
   app.log.info({ storage: store.storageBackend }, "Data store initialized");
+  app.addHook("onRequest", async (request, reply) => {
+    reply.header("x-request-id", request.id);
+  });
   app.addHook("onClose", async () => {
     await store.close();
   });
@@ -218,14 +227,16 @@ export async function createApp(config: AppConfig) {
       return {
         ok: true,
         service: "bikegogogo-server",
-        storage: store.storageBackend
+        storage: store.storageBackend,
+        revision: config.revision ?? "development"
       };
     } catch (error) {
       app.log.error({ err: error }, "Data store health check failed");
       return reply.status(503).send({
         ok: false,
         service: "bikegogogo-server",
-        storage: store.storageBackend
+        storage: store.storageBackend,
+        revision: config.revision ?? "development"
       });
     }
   });
@@ -965,7 +976,8 @@ export async function createApp(config: AppConfig) {
       return reply.status(400).send({
         error: "invalid_request",
         message: "Request validation failed",
-        details: error.flatten()
+        details: error.flatten(),
+        requestId: request.id
       });
     }
 
@@ -973,7 +985,8 @@ export async function createApp(config: AppConfig) {
       request.log.warn({ code: error.code }, error.message);
       return reply.status(error.statusCode).send({
         error: error.code,
-        message: error.message
+        message: error.message,
+        requestId: request.id
       });
     }
 
@@ -981,14 +994,35 @@ export async function createApp(config: AppConfig) {
       request.log.warn({ code: "invalid_apple_identity" }, error.message);
       return reply.status(401).send({
         error: "invalid_apple_identity",
-        message: error.message
+        message: error.message,
+        requestId: request.id
+      });
+    }
+
+    const statusCode = typeof error === "object"
+      && error !== null
+      && "statusCode" in error
+      && typeof error.statusCode === "number"
+      ? error.statusCode
+      : undefined;
+    if (statusCode && statusCode >= 400 && statusCode < 500) {
+      const isRateLimited = statusCode === 429;
+      request.log.warn(
+        { err: error, statusCode },
+        "Request rejected"
+      );
+      return reply.status(statusCode).send({
+        error: isRateLimited ? "rate_limit_exceeded" : "request_rejected",
+        message: isRateLimited ? "Too many requests" : "Request rejected",
+        requestId: request.id
       });
     }
 
     request.log.error(error);
     return reply.status(500).send({
       error: "internal_server_error",
-      message: "Internal server error"
+      message: "Internal server error",
+      requestId: request.id
     });
   });
 

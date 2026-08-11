@@ -24,4 +24,8 @@ enum AppConfiguration {
             string: "https://bikegogogo-privacy.sssnto.cn"
         )!
     }
+
+    static var supportURL: URL {
+        URL(string: "https://bikegogogo-privacy.sssnto.cn/support/")!
+    }
 }

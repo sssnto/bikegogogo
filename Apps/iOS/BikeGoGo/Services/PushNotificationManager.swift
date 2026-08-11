@@ -249,6 +249,7 @@ final class BikeGoGoAppDelegate: NSObject, UIApplicationDelegate,
         ]? = nil
     ) -> Bool {
         UNUserNotificationCenter.current().delegate = self
+        DiagnosticCenter.shared.start()
         return true
     }
 

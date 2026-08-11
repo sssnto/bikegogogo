@@ -362,6 +362,7 @@ private struct AccountSettingsView: View {
     @EnvironmentObject private var appState: AppState
     @State private var notificationStatus = "读取中"
     @State private var isExporting = false
+    @State private var isExportingDiagnostics = false
     @State private var exportedFile: ExportedAccountFile?
     @State private var confirmsDeletion = false
 
@@ -416,13 +417,27 @@ private struct AccountSettingsView: View {
                 }
                 .disabled(isExporting || account.isWorking)
 
+                Button {
+                    exportDiagnostics()
+                } label: {
+                    Label(
+                        isExportingDiagnostics ? "正在生成诊断报告" : "导出诊断报告",
+                        systemImage: "stethoscope"
+                    )
+                }
+                .disabled(isExportingDiagnostics)
+
                 Link(destination: AppConfiguration.privacyPolicyURL) {
                     Label("隐私政策", systemImage: "hand.raised")
+                }
+
+                Link(destination: AppConfiguration.supportURL) {
+                    Label("帮助与支持", systemImage: "questionmark.circle")
                 }
             } header: {
                 Text("数据与隐私")
             } footer: {
-                Text("导出文件包含账户资料、好友关系、小队和已同步的骑行记录，不包含登录令牌或推送令牌。")
+                Text("个人数据文件包含账户资料、好友关系、小队和已同步的骑行记录。诊断报告仅包含版本、系统信息、崩溃与卡顿报告和匿名请求编号；两者都不包含登录令牌或推送令牌。")
             }
 
             Section {
@@ -543,6 +558,18 @@ private struct AccountSettingsView: View {
             if let url = await account.exportPersonalData() {
                 exportedFile = ExportedAccountFile(url: url)
             }
+        }
+    }
+
+    private func exportDiagnostics() {
+        isExportingDiagnostics = true
+        defer { isExportingDiagnostics = false }
+        do {
+            let url = try DiagnosticCenter.shared.exportReport()
+            exportedFile = ExportedAccountFile(url: url)
+            account.statusMessage = "诊断报告已生成"
+        } catch {
+            account.errorMessage = "无法生成诊断报告，请稍后重试。"
         }
     }
 

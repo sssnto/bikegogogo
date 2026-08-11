@@ -31,6 +31,79 @@ const configFor = (
   })
 });
 
+test("health responses expose a request ID and build revision", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "bikegogogo-test-"));
+  const dataFile = path.join(directory, "data.json");
+  const app = await createApp({
+    ...configFor(dataFile),
+    revision: "test-revision"
+  });
+
+  try {
+    const response = await app.inject({ method: "GET", url: "/health" });
+    assert.equal(response.statusCode, 200);
+    assert.match(response.headers["x-request-id"] ?? "", /^req-/);
+    assert.equal(response.json().revision, "test-revision");
+  } finally {
+    await app.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("rate limits distinguish clients behind one trusted proxy", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "bikegogogo-test-"));
+  const dataFile = path.join(directory, "data.json");
+  const app = await createApp({
+    ...configFor(dataFile),
+    trustProxy: 1
+  });
+
+  try {
+    for (let index = 0; index < 10; index += 1) {
+      const response = await app.inject({
+        method: "POST",
+        url: "/v1/auth/guest",
+        headers: { "x-forwarded-for": "198.51.100.10" },
+        payload: {
+          deviceId: `trusted-proxy-client-a-${index}`,
+          displayName: "Proxy Rider A"
+        }
+      });
+      assert.equal(response.statusCode, 200);
+    }
+
+    const limitedResponse = await app.inject({
+      method: "POST",
+      url: "/v1/auth/guest",
+      headers: { "x-forwarded-for": "198.51.100.10" },
+      payload: {
+        deviceId: "trusted-proxy-client-a-limited",
+        displayName: "Proxy Rider A"
+      }
+    });
+    assert.equal(limitedResponse.statusCode, 429);
+    assert.equal(limitedResponse.json().error, "rate_limit_exceeded");
+    assert.equal(
+      limitedResponse.json().requestId,
+      limitedResponse.headers["x-request-id"]
+    );
+
+    const otherClientResponse = await app.inject({
+      method: "POST",
+      url: "/v1/auth/guest",
+      headers: { "x-forwarded-for": "203.0.113.20" },
+      payload: {
+        deviceId: "trusted-proxy-client-b-first",
+        displayName: "Proxy Rider B"
+      }
+    });
+    assert.equal(otherClientResponse.statusCode, 200);
+  } finally {
+    await app.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("push tokens receive friend and group notifications for their account", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "bikegogogo-test-"));
   const dataFile = path.join(directory, "data.json");
