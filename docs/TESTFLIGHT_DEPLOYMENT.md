@@ -116,6 +116,12 @@ Outdoor Cycling workout。小队语音仅允许已建立好友关系或同一小
 1. 确认联系邮箱仍然有效。
 2. 按 NAS 部署文档启动 `privacy-policy` 并配置 Nginx Proxy Manager。
 3. 把 `https://bikegogogo-privacy.sssnto.cn` 填入 App Store Connect 的“隐私政策 URL”。
+4. 把 `https://bikegogogo-privacy.sssnto.cn/support/` 填入版本信息的“技术支持网址”。
+
+App 内“我的 > 账户与隐私”可以主动导出诊断报告。未分享前，报告只在设备本地处理，
+不属于 App Store 隐私问卷所称的收集。用户主动发送给客服时，应按 Apple 的“可选披露”
+条件复核；如以后改为自动上传，必须同步更新隐私政策、隐私清单和 App Store Connect
+隐私问卷。
 
 App 隐私问卷按当前实现申报：
 

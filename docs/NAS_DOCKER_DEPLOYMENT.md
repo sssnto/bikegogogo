@@ -50,6 +50,7 @@ ALLOWED_ORIGINS=
 DATA_FILE=/data/bikegogogo.json
 APPLE_BUNDLE_ID=com.sssnto.BikeGoGo
 SESSION_TTL_DAYS=30
+TRUST_PROXY_HOPS=1
 POSTGRES_DB=bikegogogo
 POSTGRES_USER=bikegogogo
 POSTGRES_PASSWORD=<64位十六进制强密码>
@@ -68,6 +69,10 @@ APNS_PRODUCTION_KEY_PATH=/run/secrets/apns-production-key.p8
 - 不要把真实密钥写进 GitHub 仓库。
 - iOS App 不直接连接 LiveKit API Secret，只向这个后端请求短期 token。
 - `APPLE_BUNDLE_ID` 必须与 iOS target 的 Product Bundle Identifier 完全一致。
+- `TRUST_PROXY_HOPS=1` 表示后端前只有 Nginx Proxy Manager 一层可信代理。这样限流会按
+  真实客户端 IP 分开计算，而不是让所有用户共用 NAS 代理 IP 的额度。不要填写大于实际
+  代理层数的值，否则客户端可能伪造转发来源。若请求路径为
+  `客户端 -> CDN -> Nginx Proxy Manager -> 后端`，填写 `2`。
 - Apple 身份公钥由服务端从 Apple 官方 JWKS 自动读取，不需要在 NAS 保存 Apple 私钥。
 - PostgreSQL 不映射宿主机端口，只允许同一 Compose 网络中的后端访问。
 - 配置 `DATABASE_URL` 后，PostgreSQL 是主存储；服务端会继续更新
@@ -91,6 +96,7 @@ docker run -d \
   -e DATA_FILE=/data/bikegogogo.json \
   -e APPLE_BUNDLE_ID=com.sssnto.BikeGoGo \
   -e SESSION_TTL_DAYS=30 \
+  -e TRUST_PROXY_HOPS=1 \
   -v bikegogogo-data:/data \
   ghcr.io/<你的 GitHub 用户名小写>/bikegogogo-server:latest
 ```
@@ -99,6 +105,13 @@ docker run -d \
 
 ```bash
 curl http://<NAS_IP>:8080/health
+```
+
+健康检查响应中的 `revision` 是当前镜像对应的 Git 提交 SHA。每个 HTTP 响应还会返回
+`X-Request-ID`；排查客户端错误时，可以在 NAS 容器日志中搜索该值：
+
+```bash
+docker compose logs bikegogogo-server | grep '<X-Request-ID>'
 ```
 
 ## Docker Compose 部署
@@ -336,7 +349,7 @@ LiveKit Cloud 本身不需要你在 NAS 上暴露端口。客户端会拿到后�
 ## 隐私政策服务与 Nginx Proxy Manager
 
 隐私政策镜像为 `ghcr.io/sssnto/bikegogogo-privacy:latest`。镜像构建时使用 Pandoc 将
-`docs/PRIVACY_POLICY.md` 转为适合手机浏览的静态 HTML，运行时只包含 Nginx，不连接
+`docs/PRIVACY_POLICY.md` 和 `docs/SUPPORT.md` 转为适合手机浏览的静态 HTML，运行时只包含 Nginx，不连接
 PostgreSQL，也不接收或保存用户数据。
 
 首次部署前，先把本次代码合并到 `main`，等待 GitHub Actions 中的
@@ -390,6 +403,7 @@ curl -I http://127.0.0.1:8081/
 ```bash
 curl https://bikegogogo-privacy.sssnto.cn/health
 curl -I https://bikegogogo-privacy.sssnto.cn/
+curl -I https://bikegogogo-privacy.sssnto.cn/support/
 ```
 
 然后在 App Store Connect 的“App 隐私 > 隐私政策 URL”填写：

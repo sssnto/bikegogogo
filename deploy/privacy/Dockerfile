@@ -3,6 +3,7 @@ FROM pandoc/core:3.10.0.0-alpine AS builder
 WORKDIR /source
 
 COPY docs/PRIVACY_POLICY.md ./PRIVACY_POLICY.md
+COPY docs/SUPPORT.md ./SUPPORT.md
 COPY deploy/privacy/template.html ./template.html
 
 RUN mkdir -p /output && \
@@ -12,12 +13,20 @@ RUN mkdir -p /output && \
       --standalone \
       --template=template.html \
       --metadata title="BikeGoGo 隐私政策" \
-      --output=/output/index.html
+      --output=/output/index.html && \
+    mkdir -p /output/support && \
+    pandoc SUPPORT.md \
+      --from=gfm \
+      --to=html5 \
+      --standalone \
+      --template=template.html \
+      --metadata title="BikeGoGo 帮助与支持" \
+      --output=/output/support/index.html
 
 FROM nginx:1.28-alpine
 
 COPY deploy/privacy/nginx.conf /etc/nginx/conf.d/default.conf
-COPY --from=builder /output/index.html /usr/share/nginx/html/index.html
+COPY --from=builder /output/ /usr/share/nginx/html/
 
 EXPOSE 80
 

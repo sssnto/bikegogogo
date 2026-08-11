@@ -33,6 +33,8 @@ const envSchema = z.object({
   DATABASE_URL: z.string().min(1).optional(),
   APPLE_BUNDLE_ID: z.string().default("com.sssnto.BikeGoGo"),
   SESSION_TTL_DAYS: z.coerce.number().int().min(1).max(365).default(30),
+  TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(10).default(1),
+  APP_REVISION: z.string().min(1).default("development"),
   APNS_KEY_ID: z.string().min(1).optional(),
   APNS_TEAM_ID: z.string().min(1).optional(),
   APNS_TOPIC: z.string().min(1).optional(),
@@ -97,7 +99,35 @@ const app = await createApp({
   databaseUrl: env.DATABASE_URL,
   appleBundleId: env.APPLE_BUNDLE_ID,
   sessionTTLDays: env.SESSION_TTL_DAYS,
+  trustProxy: env.TRUST_PROXY_HOPS === 0 ? false : env.TRUST_PROXY_HOPS,
+  revision: env.APP_REVISION,
   notificationSenders
 });
 
 await app.listen({ port: env.PORT, host: "0.0.0.0" });
+
+let isShuttingDown = false;
+const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+  app.log.info({ signal }, "Graceful shutdown started");
+
+  const forcedExit = setTimeout(() => {
+    app.log.error({ signal }, "Graceful shutdown timed out");
+    process.exit(1);
+  }, 25_000);
+  forcedExit.unref();
+
+  try {
+    await app.close();
+    clearTimeout(forcedExit);
+    app.log.info({ signal }, "Graceful shutdown completed");
+  } catch (error) {
+    clearTimeout(forcedExit);
+    app.log.error({ err: error, signal }, "Graceful shutdown failed");
+    process.exitCode = 1;
+  }
+};
+
+process.once("SIGTERM", () => void shutdown("SIGTERM"));
+process.once("SIGINT", () => void shutdown("SIGINT"));

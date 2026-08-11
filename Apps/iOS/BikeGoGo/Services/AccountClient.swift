@@ -447,6 +447,7 @@ final class AccountClient: ObservableObject {
         }
         guard 200..<300 ~= httpResponse.statusCode else {
             let serverError = try? JSONDecoder().decode(ServerErrorResponse.self, from: data)
+            recordNetworkFailure(response: httpResponse, serverError: serverError)
             throw AccountError.server(
                 code: serverError?.error ?? "request_failed",
                 statusCode: httpResponse.statusCode
@@ -470,6 +471,7 @@ final class AccountClient: ObservableObject {
         }
         guard 200..<300 ~= httpResponse.statusCode else {
             let serverError = try? JSONDecoder().decode(ServerErrorResponse.self, from: data)
+            recordNetworkFailure(response: httpResponse, serverError: serverError)
             throw AccountError.server(
                 code: serverError?.error ?? "request_failed",
                 statusCode: httpResponse.statusCode
@@ -501,11 +503,23 @@ final class AccountClient: ObservableObject {
         }
         guard 200..<300 ~= httpResponse.statusCode else {
             let serverError = try? JSONDecoder().decode(ServerErrorResponse.self, from: data)
+            recordNetworkFailure(response: httpResponse, serverError: serverError)
             throw AccountError.server(
                 code: serverError?.error ?? "request_failed",
                 statusCode: httpResponse.statusCode
             )
         }
+    }
+
+    private func recordNetworkFailure(
+        response: HTTPURLResponse,
+        serverError: ServerErrorResponse?
+    ) {
+        DiagnosticCenter.shared.recordNetworkFailure(
+            statusCode: response.statusCode,
+            requestID: serverError?.requestId
+                ?? response.value(forHTTPHeaderField: "x-request-id")
+        )
     }
 
     private func saveSession(_ response: GuestLoginResponse) {
@@ -688,6 +702,7 @@ private struct GroupResponse: Decodable {
 
 private struct ServerErrorResponse: Decodable {
     let error: String
+    let requestId: String?
 }
 
 private enum AccountError: Error {

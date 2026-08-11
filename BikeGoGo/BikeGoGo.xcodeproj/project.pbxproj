@@ -45,6 +45,7 @@
 		A1CC001B3017000000385B45 /* RideShareMediaExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1CC001D3017000000385B45 /* RideShareMediaExporter.swift */; };
 		A1CC001E3018000000385B45 /* HealthKitRideImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1CC001F3018000000385B45 /* HealthKitRideImporter.swift */; };
 		A1CC00213019000000385B45 /* RideWeatherService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1CC00203019000000385B45 /* RideWeatherService.swift */; };
+		A1CC0022301A000000385B45 /* DiagnosticCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1CC0023301A000000385B45 /* DiagnosticCenter.swift */; };
 		A8855BA16382BA269B33C0B7 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 71EC0EB53A7BDC4854D82F65 /* Foundation.framework */; };
 		E3DCA650B91494233E8C3D26 /* WatchWorkoutManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4D1E2FA168DF5900F97CDDA /* WatchWorkoutManager.swift */; };
 		FA1EB89CCD61D0C4C5E84150 /* BikeGoGoWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B03FCC2AC7B99FDA19FD4EAA /* BikeGoGoWatchApp.swift */; };
@@ -110,6 +111,7 @@
 		A1CC001D3017000000385B45 /* RideShareMediaExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RideShareMediaExporter.swift; sourceTree = "<group>"; };
 		A1CC001F3018000000385B45 /* HealthKitRideImporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitRideImporter.swift; sourceTree = "<group>"; };
 		A1CC00203019000000385B45 /* RideWeatherService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RideWeatherService.swift; sourceTree = "<group>"; };
+		A1CC0023301A000000385B45 /* DiagnosticCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticCenter.swift; sourceTree = "<group>"; };
 		A51D40E731FD4D25B923D101 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		B03FCC2AC7B99FDA19FD4EAA /* BikeGoGoWatchApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BikeGoGoWatchApp.swift; sourceTree = "<group>"; };
 		BA2F9917DE74AD1C088CAC0F /* WatchRideView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchRideView.swift; sourceTree = "<group>"; };
@@ -239,6 +241,7 @@
 			isa = PBXGroup;
 			children = (
 				6FA2ABF6301312BF00385B45 /* AppConfiguration.swift */,
+				A1CC0023301A000000385B45 /* DiagnosticCenter.swift */,
 				6FA2ABF7301312BF00385B45 /* BikeGoGo.entitlements */,
 				6FA2ABF8301312BF00385B45 /* Info.plist */,
 				A1CC00123013300000385B45 /* PrivacyInfo.xcprivacy */,
@@ -430,6 +433,7 @@
 				A1CC001B3017000000385B45 /* RideShareMediaExporter.swift in Sources */,
 				A1CC001E3018000000385B45 /* HealthKitRideImporter.swift in Sources */,
 				A1CC00213019000000385B45 /* RideWeatherService.swift in Sources */,
+				A1CC0022301A000000385B45 /* DiagnosticCenter.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -462,7 +466,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = ../Apps/watchOS/BikeGoGoWatch/Support/BikeGoGoWatch.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 21;
+				CURRENT_PROJECT_VERSION = 22;
 				DEVELOPMENT_TEAM = FR9RTRV9BC;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -612,7 +616,7 @@
 				BIKEGOGO_PUSH_ENVIRONMENT = sandbox;
 				CODE_SIGN_ENTITLEMENTS = BikeGoGo/Support/BikeGoGo.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 21;
+				CURRENT_PROJECT_VERSION = 22;
 				DEVELOPMENT_TEAM = FR9RTRV9BC;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -648,7 +652,7 @@
 				BIKEGOGO_PUSH_ENVIRONMENT = production;
 				CODE_SIGN_ENTITLEMENTS = BikeGoGo/Support/BikeGoGo.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 21;
+				CURRENT_PROJECT_VERSION = 22;
 				DEVELOPMENT_TEAM = FR9RTRV9BC;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -681,7 +685,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = ../Apps/watchOS/BikeGoGoWatch/Support/BikeGoGoWatch.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 21;
+				CURRENT_PROJECT_VERSION = 22;
 				DEVELOPMENT_TEAM = FR9RTRV9BC;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
