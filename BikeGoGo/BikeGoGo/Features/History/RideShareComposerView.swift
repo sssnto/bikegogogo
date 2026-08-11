@@ -21,20 +21,33 @@ struct RideShareComposerView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 20) {
+            VStack(alignment: .leading, spacing: 20) {
                 mediaPreview
 
-                Picker("数据样式", selection: $template) {
-                    ForEach(RideShareTemplate.allCases) { item in
-                        Text(item.title).tag(item)
-                    }
-                }
-                .pickerStyle(.segmented)
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("作品样式")
+                        .font(.headline)
 
-                Toggle(isOn: $showsRoute) {
-                    Label("显示骑行轨迹", systemImage: "map")
+                    Picker("数据样式", selection: $template) {
+                        ForEach(RideShareTemplate.allCases) { item in
+                            Text(item.title).tag(item)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+
+                    Divider()
+
+                    Toggle(isOn: $showsRoute) {
+                        Label("显示骑行轨迹", systemImage: "map")
+                    }
+                    .tint(BikeGoGoStyle.brand)
+                    .disabled(ride.points.count < 2)
                 }
-                .disabled(ride.points.count < 2)
+                .padding(16)
+                .background(
+                    Color(uiColor: .secondarySystemGroupedBackground),
+                    in: RoundedRectangle(cornerRadius: BikeGoGoStyle.cornerRadius)
+                )
 
                 HStack(spacing: 12) {
                     PhotosPicker(
@@ -48,6 +61,11 @@ struct RideShareComposerView: View {
                         .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.bordered)
+                    .controlSize(.large)
+                    .buttonBorderShape(
+                        .roundedRectangle(radius: BikeGoGoStyle.cornerRadius)
+                    )
+                    .tint(BikeGoGoStyle.brand)
 
                     Button {
                         Task { await export() }
@@ -61,13 +79,17 @@ struct RideShareComposerView: View {
                         }
                     }
                     .buttonStyle(.borderedProminent)
-                    .tint(Color(red: 0, green: 0.42, blue: 0.36))
+                    .controlSize(.large)
+                    .buttonBorderShape(
+                        .roundedRectangle(radius: BikeGoGoStyle.cornerRadius)
+                    )
+                    .tint(BikeGoGoStyle.brand)
                     .disabled(media == nil || isLoadingMedia || isExporting)
                 }
             }
             .padding(16)
         }
-        .navigationTitle("分享骑行")
+        .navigationTitle("制作分享作品")
         .navigationBarTitleDisplayMode(.inline)
         .background(Color(.systemGroupedBackground))
         .onChange(of: selectedItem) { _, item in
@@ -94,7 +116,7 @@ struct RideShareComposerView: View {
 
     private var mediaPreview: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: BikeGoGoStyle.cornerRadius)
                 .fill(.black)
 
             if let media {
@@ -145,8 +167,8 @@ struct RideShareComposerView: View {
         }
         .aspectRatio(media?.aspectRatio ?? 4 / 5, contentMode: .fit)
         .frame(maxWidth: .infinity)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .contentShape(RoundedRectangle(cornerRadius: 8))
+        .clipShape(RoundedRectangle(cornerRadius: BikeGoGoStyle.cornerRadius))
+        .contentShape(RoundedRectangle(cornerRadius: BikeGoGoStyle.cornerRadius))
     }
 
     @MainActor

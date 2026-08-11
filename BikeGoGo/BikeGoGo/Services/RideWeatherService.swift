@@ -77,6 +77,8 @@ struct RideWeatherService {
             return "炎热"
         case .hail:
             return "冰雹"
+        @unknown default:
+            return "天气变化"
         }
     }
 }

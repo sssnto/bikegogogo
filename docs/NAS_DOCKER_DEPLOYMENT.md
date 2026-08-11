@@ -303,12 +303,12 @@ docker compose cp bikegogogo-server:/data/bikegogogo.json \
 
 ## 对外暴露的服务
 
-当前只需要暴露 BikeGoGo 后端 HTTP 服务：
+需要由 NAS 向反向代理提供两个内网 HTTP 服务：
 
 ```text
-容器端口：8080/tcp
-NAS 映射端口：建议 8080/tcp
-公网访问：建议通过反向代理提供 HTTPS
+BikeGoGo API：容器 8080/tcp，NAS 默认映射 8080/tcp
+隐私政策：容器 80/tcp，NAS 默认映射 8081/tcp
+公网访问：只通过反向代理提供 HTTPS
 ```
 
 当前公网地址：
@@ -332,6 +332,74 @@ https://bikegogogo-server.sssnto.cn:8443
 - LiveKit API Secret。
 
 LiveKit Cloud 本身不需要你在 NAS 上暴露端口。客户端会拿到后端签发的 token，再连接 `wss://bikegogo-qy7s1sfz.livekit.cloud`。
+
+## 隐私政策服务与 Nginx Proxy Manager
+
+隐私政策镜像为 `ghcr.io/sssnto/bikegogogo-privacy:latest`。镜像构建时使用 Pandoc 将
+`docs/PRIVACY_POLICY.md` 转为适合手机浏览的静态 HTML，运行时只包含 Nginx，不连接
+PostgreSQL，也不接收或保存用户数据。
+
+首次部署前，先把本次代码合并到 `main`，等待 GitHub Actions 中的
+`Build Production Docker Images` 成功。该工作流会发布支持 AMD64 和 ARM64 的
+`bikegogogo-privacy:latest`。也可以在 Actions 页面手动运行该工作流；只有 `main`
+分支构建会更新 `latest` 标签。
+
+若 GHCR Package 尚未设为 Public，需要先在 NAS 登录。密码应使用有 `read:packages`
+权限的 GitHub Personal Access Token，不要使用 GitHub 登录密码：
+
+```bash
+docker login ghcr.io -u sssnto
+```
+
+在 NAS 的 `.env` 中保留或修改隐私服务端口：
+
+```dotenv
+BIKEGOGOGO_PRIVACY_PORT=8081
+```
+
+更新并启动服务：
+
+```bash
+docker compose pull privacy-policy
+docker compose up -d privacy-policy
+curl http://127.0.0.1:8081/health
+curl -I http://127.0.0.1:8081/
+```
+
+第一个命令应返回 `ok`，第二个命令应返回 `200`，并包含 `Content-Security-Policy`、
+`X-Content-Type-Options` 和 `X-Frame-Options` 响应头。
+
+在 Nginx Proxy Manager 中选择 `Hosts > Proxy Hosts > Add Proxy Host`：
+
+| 配置项 | 填写内容 |
+| --- | --- |
+| Domain Names | `bikegogogo-privacy.sssnto.cn` |
+| Scheme | `http` |
+| Forward Hostname / IP | NAS 的局域网 IP |
+| Forward Port | `8081`，或 `.env` 中修改后的端口 |
+| Cache Assets | 关闭 |
+| Block Common Exploits | 开启 |
+| Websockets Support | 关闭 |
+
+在 `SSL` 页签申请新的 Let's Encrypt 证书，开启 `Force SSL`、`HTTP/2 Support` 和
+`HSTS Enabled`。路由器无需把 `8081` 直接映射到公网；公网只开放 Nginx Proxy Manager
+使用的 HTTPS 端口。
+
+完成后验证：
+
+```bash
+curl https://bikegogogo-privacy.sssnto.cn/health
+curl -I https://bikegogogo-privacy.sssnto.cn/
+```
+
+然后在 App Store Connect 的“App 隐私 > 隐私政策 URL”填写：
+
+```text
+https://bikegogogo-privacy.sssnto.cn
+```
+
+iOS App 内的隐私政策入口也已使用该地址。若最终使用其他域名，必须同时修改两份
+`Support/Info.plist` 中的 `BikeGoGoPrivacyPolicyURL` 后重新 Archive。
 
 ## 当前 HTTP 接口
 

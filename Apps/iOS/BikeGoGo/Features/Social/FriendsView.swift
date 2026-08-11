@@ -25,57 +25,28 @@ private struct AccountView: View {
 
     var body: some View {
         NavigationStack {
-            List {
+            ScrollView {
                 if let user = account.currentUser {
-                    profileSection(user)
-                    accountSecuritySection(user)
-                    requestsSections
-                    friendsSection
-                    pendingSection
-                    statusSection
-                } else {
-                    Section {
-                        HStack(spacing: 12) {
-                            if account.isWorking {
-                                ProgressView()
-                            } else {
-                                Image(systemName: "wifi.exclamationmark")
-                                    .foregroundStyle(.secondary)
-                            }
-                            Text(account.isWorking ? "正在建立骑行账户..." : "账户暂时不可用")
-                                .foregroundStyle(.secondary)
-                        }
-
-                        if account.requiresAppleSignIn {
-                            VStack(alignment: .leading, spacing: 12) {
-                                Text("这个设备上的账户已受 Apple ID 保护。")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                                AppleSignInControl(account: account)
-                            }
-                        } else if !account.isWorking {
-                            Button {
-                                Task {
-                                    await account.bootstrap(defaultDisplayName: "骑行好友")
-                                }
-                            } label: {
-                                Label("重新连接", systemImage: "arrow.clockwise")
-                            }
-                        }
+                    LazyVStack(alignment: .leading, spacing: 22) {
+                        profileCard(user)
+                        relationshipSummary
+                        requestsSection
+                        friendsSection
+                        pendingSection
+                        statusSection
                     }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 14)
+                } else {
+                    unavailableAccount
+                        .padding(.horizontal, 16)
+                        .padding(.top, 80)
                 }
             }
+            .background(Color(uiColor: .systemGroupedBackground))
             .navigationTitle("我的")
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
-                    Button {
-                        Task { await account.refresh() }
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
-                    }
-                    .disabled(account.currentUser == nil || account.isWorking)
-                    .accessibilityLabel("刷新")
-
                     Button {
                         isAddingFriend = true
                     } label: {
@@ -128,18 +99,17 @@ private struct AccountView: View {
         }
     }
 
-    private func profileSection(_ user: AppUser) -> some View {
-        Section {
+    private func profileCard(_ user: AppUser) -> some View {
+        VStack(spacing: 16) {
             HStack(spacing: 14) {
-                Image(systemName: "person.crop.circle.fill")
-                    .font(.system(size: 48))
-                    .foregroundStyle(.tint)
+                ProfileAvatar(name: user.displayName, size: 60)
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(user.displayName)
-                        .font(.headline)
+                        .font(.title3.bold())
+                        .lineLimit(1)
                     Text(user.isAppleAccount ? "Apple 账户" : "访客账户")
-                        .font(.caption)
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
 
@@ -149,90 +119,161 @@ private struct AccountView: View {
                     isEditingProfile = true
                 } label: {
                     Image(systemName: "pencil")
+                        .frame(width: 36, height: 36)
+                        .background(Color(uiColor: .tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: BikeGoGoStyle.cornerRadius))
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.plain)
                 .accessibilityLabel("修改昵称")
             }
+
+            Divider()
 
             Button {
                 UIPasteboard.general.string = user.friendCode
                 copiedFriendCode = true
+                Task {
+                    try? await Task.sleep(nanoseconds: 2_000_000_000)
+                    copiedFriendCode = false
+                }
             } label: {
                 HStack {
-                    Label("我的好友码", systemImage: "number")
-                    Spacer()
-                    Text(user.friendCode)
-                        .font(.system(.body, design: .monospaced, weight: .semibold))
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("好友码")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text(user.friendCode)
+                            .font(.system(.body, design: .monospaced, weight: .semibold))
+                    }
+
+                    Spacer(minLength: 12)
+
+                    Text(copiedFriendCode ? "已复制" : "复制")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(copiedFriendCode ? BikeGoGoStyle.route : BikeGoGoStyle.brand)
                     Image(systemName: copiedFriendCode ? "checkmark" : "doc.on.doc")
-                        .foregroundStyle(copiedFriendCode ? .green : .secondary)
+                        .foregroundStyle(copiedFriendCode ? BikeGoGoStyle.route : BikeGoGoStyle.brand)
                 }
             }
             .buttonStyle(.plain)
         }
+        .padding(16)
+        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: BikeGoGoStyle.cornerRadius))
     }
 
-    private func accountSecuritySection(_ user: AppUser) -> some View {
-        Section("账户安全") {
-            if user.isAppleAccount {
-                Label("已连接 Apple ID", systemImage: "checkmark.shield.fill")
-                    .foregroundStyle(.green)
-
-                Button(role: .destructive) {
-                    Task { await account.signOut() }
-                } label: {
-                    Label("退出登录", systemImage: "rectangle.portrait.and.arrow.right")
-                }
-                .disabled(account.isWorking)
-            } else {
-                Text("连接 Apple ID 后，可在更换或重装设备后恢复好友账户。")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                AppleSignInControl(account: account)
-            }
+    private var relationshipSummary: some View {
+        HStack(spacing: 0) {
+            relationshipMetric(
+                value: account.friends.count,
+                title: "好友",
+                systemImage: "person.2.fill"
+            )
+            Divider().frame(height: 42)
+            relationshipMetric(
+                value: account.groups.count,
+                title: "小队",
+                systemImage: "person.3.fill"
+            )
+            Divider().frame(height: 42)
+            relationshipMetric(
+                value: account.incomingRequests.count,
+                title: "待处理",
+                systemImage: "person.crop.circle.badge.clock"
+            )
         }
+        .padding(.vertical, 14)
+        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: BikeGoGoStyle.cornerRadius))
+    }
+
+    private func relationshipMetric(
+        value: Int,
+        title: String,
+        systemImage: String
+    ) -> some View {
+        VStack(spacing: 5) {
+            Label("\(value)", systemImage: systemImage)
+                .font(.headline)
+                .foregroundStyle(BikeGoGoStyle.brand)
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
     }
 
     @ViewBuilder
-    private var requestsSections: some View {
+    private var requestsSection: some View {
         if !account.incomingRequests.isEmpty {
-            Section("待处理申请") {
-                ForEach(account.incomingRequests) { request in
-                    HStack(spacing: 12) {
-                        PersonLabel(user: request.user)
-                        Spacer()
-                        Button {
-                            Task { await account.respond(to: request.id, accept: false) }
-                        } label: {
-                            Image(systemName: "xmark.circle")
-                        }
-                        .buttonStyle(.borderless)
-                        .tint(.secondary)
-                        .accessibilityLabel("拒绝 \(request.user.displayName)")
+            VStack(alignment: .leading, spacing: 12) {
+                AccountSectionHeader(
+                    title: "好友申请",
+                    value: "\(account.incomingRequests.count) 个待处理"
+                )
 
-                        Button {
-                            Task { await account.respond(to: request.id, accept: true) }
-                        } label: {
-                            Image(systemName: "checkmark.circle.fill")
+                ForEach(account.incomingRequests) { request in
+                    VStack(spacing: 14) {
+                        PersonLabel(
+                            user: request.user,
+                            subtitle: "希望添加你为骑行好友"
+                        )
+
+                        HStack(spacing: 10) {
+                            Button {
+                                Task { await account.respond(to: request.id, accept: false) }
+                            } label: {
+                                Label("忽略", systemImage: "xmark")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.large)
+                            .buttonBorderShape(.roundedRectangle(radius: BikeGoGoStyle.cornerRadius))
+                            .tint(.secondary)
+
+                            Button {
+                                Task { await account.respond(to: request.id, accept: true) }
+                            } label: {
+                                Label("同意", systemImage: "checkmark")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.large)
+                            .buttonBorderShape(.roundedRectangle(radius: BikeGoGoStyle.cornerRadius))
+                            .tint(BikeGoGoStyle.brand)
                         }
-                        .buttonStyle(.borderless)
-                        .tint(.green)
-                        .accessibilityLabel("接受 \(request.user.displayName)")
                     }
+                    .padding(14)
+                    .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: BikeGoGoStyle.cornerRadius))
                 }
             }
         }
     }
 
     private var friendsSection: some View {
-        Section("好友 \(account.friends.count)") {
+        VStack(alignment: .leading, spacing: 12) {
+            AccountSectionHeader(title: "骑行好友", value: "\(account.friends.count) 人")
+
             if account.friends.isEmpty {
-                Text("还没有好友，使用右上角按钮输入对方的好友码。")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            } else {
-                ForEach(account.friends) { friend in
-                    PersonLabel(user: friend)
+                Button {
+                    isAddingFriend = true
+                } label: {
+                    Label("添加第一位好友", systemImage: "person.badge.plus")
+                        .frame(maxWidth: .infinity)
                 }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+                .buttonBorderShape(.roundedRectangle(radius: BikeGoGoStyle.cornerRadius))
+                .tint(BikeGoGoStyle.brand)
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(account.friends.enumerated()), id: \.element.id) { index, friend in
+                        PersonLabel(user: friend, subtitle: "可发起好友语音")
+                            .padding(14)
+
+                        if index < account.friends.count - 1 {
+                            Divider().padding(.leading, 64)
+                        }
+                    }
+                }
+                .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: BikeGoGoStyle.cornerRadius))
             }
         }
     }
@@ -240,16 +281,28 @@ private struct AccountView: View {
     @ViewBuilder
     private var pendingSection: some View {
         if !account.outgoingRequests.isEmpty {
-            Section("已发送") {
-                ForEach(account.outgoingRequests) { request in
-                    HStack {
-                        PersonLabel(user: request.user)
-                        Spacer()
-                        Text("等待同意")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 12) {
+                AccountSectionHeader(title: "已发送申请", value: "\(account.outgoingRequests.count) 个")
+
+                VStack(spacing: 0) {
+                    ForEach(Array(account.outgoingRequests.enumerated()), id: \.element.id) { index, request in
+                        HStack(spacing: 12) {
+                            PersonLabel(user: request.user)
+                            Text("等待同意")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(BikeGoGoStyle.warning)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 5)
+                                .background(BikeGoGoStyle.warning.opacity(0.12), in: Capsule())
+                        }
+                        .padding(14)
+
+                        if index < account.outgoingRequests.count - 1 {
+                            Divider().padding(.leading, 64)
+                        }
                     }
                 }
+                .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: BikeGoGoStyle.cornerRadius))
             }
         }
     }
@@ -257,11 +310,50 @@ private struct AccountView: View {
     @ViewBuilder
     private var statusSection: some View {
         if let statusMessage = account.statusMessage {
-            Section {
-                Label(statusMessage, systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
+            Label(statusMessage, systemImage: "checkmark.circle.fill")
+                .font(.subheadline)
+                .foregroundStyle(BikeGoGoStyle.route)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
+                .background(BikeGoGoStyle.route.opacity(0.10), in: RoundedRectangle(cornerRadius: BikeGoGoStyle.cornerRadius))
+        }
+    }
+
+    private var unavailableAccount: some View {
+        VStack(spacing: 18) {
+            if account.isWorking {
+                ProgressView()
+                    .controlSize(.large)
+                Text("正在建立骑行账户")
+                    .font(.headline)
+            } else {
+                Image(systemName: "person.crop.circle.badge.exclamationmark")
+                    .font(.system(size: 42))
+                    .foregroundStyle(.secondary)
+                Text("账户暂时不可用")
+                    .font(.headline)
+
+                if account.requiresAppleSignIn {
+                    AppleSignInControl(account: account)
+                } else {
+                    Button {
+                        Task {
+                            await account.bootstrap(defaultDisplayName: "骑行好友")
+                        }
+                    } label: {
+                        Label("重新连接", systemImage: "arrow.clockwise")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .buttonBorderShape(.roundedRectangle(radius: BikeGoGoStyle.cornerRadius))
+                    .tint(BikeGoGoStyle.brand)
+                }
             }
         }
+        .frame(maxWidth: .infinity)
+        .padding(20)
+        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: BikeGoGoStyle.cornerRadius))
     }
 }
 
@@ -281,12 +373,34 @@ private struct AccountSettingsView: View {
         List {
             Section("账户") {
                 if let user = account.currentUser {
-                    LabeledContent("账户类型") {
-                        Text(user.isAppleAccount ? "Apple 账户" : "访客账户")
+                    HStack(spacing: 12) {
+                        ProfileAvatar(name: user.displayName, size: 44)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(user.displayName)
+                                .font(.body.weight(.semibold))
+                            Text(user.isAppleAccount ? "Apple 账户" : "访客账户")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
+
                     LabeledContent("好友码") {
                         Text(user.friendCode)
                             .font(.system(.body, design: .monospaced))
+                    }
+
+                    if user.isAppleAccount {
+                        Label("已连接 Apple ID", systemImage: "checkmark.shield.fill")
+                            .foregroundStyle(BikeGoGoStyle.route)
+
+                        Button(role: .destructive) {
+                            Task { await account.signOut() }
+                        } label: {
+                            Label("退出登录", systemImage: "rectangle.portrait.and.arrow.right")
+                        }
+                        .disabled(account.isWorking)
+                    } else {
+                        AppleSignInControl(account: account)
                     }
                 }
             }
@@ -344,7 +458,7 @@ private struct AccountSettingsView: View {
             } header: {
                 Text("系统权限")
             } footer: {
-                Text("权限由 iPhone 系统管理。定位和麦克风关闭后，路线记录或骑行语音将无法正常工作。")
+                Text("权限由 iPhone 系统管理。")
             }
 
             Section {
@@ -451,13 +565,62 @@ private struct PermissionStatusRow: View {
     let systemImage: String
     let status: String
 
+    private var tint: Color {
+        switch status {
+        case "始终允许", "使用期间", "已允许", "已允许写入", "临时允许", "临时会话":
+            BikeGoGoStyle.route
+        case "已关闭", "未允许写入", "受限制", "设备不可用":
+            BikeGoGoStyle.danger
+        default:
+            BikeGoGoStyle.warning
+        }
+    }
+
     var body: some View {
         HStack {
             Label(title, systemImage: systemImage)
             Spacer()
             Text(status)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(tint)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(tint.opacity(0.12), in: Capsule())
+        }
+    }
+}
+
+private struct AccountSectionHeader: View {
+    let title: String
+    let value: String
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(title)
+                .font(.headline)
+            Spacer()
+            Text(value)
+                .font(.caption)
                 .foregroundStyle(.secondary)
         }
+    }
+}
+
+private struct ProfileAvatar: View {
+    let name: String
+    let size: CGFloat
+
+    private var initial: String {
+        String(name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(1)).uppercased()
+    }
+
+    var body: some View {
+        Text(initial.isEmpty ? "骑" : initial)
+            .font(.system(size: size * 0.36, weight: .bold, design: .rounded))
+            .foregroundStyle(.white)
+            .frame(width: size, height: size)
+            .background(BikeGoGoStyle.brand, in: RoundedRectangle(cornerRadius: BikeGoGoStyle.cornerRadius))
+            .accessibilityHidden(true)
     }
 }
 
@@ -572,14 +735,30 @@ private enum AppleNonceError: Error {
 
 private struct PersonLabel: View {
     let user: AppUser
+    let subtitle: String?
+
+    init(user: AppUser, subtitle: String? = nil) {
+        self.user = user
+        self.subtitle = subtitle
+    }
 
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "person.circle.fill")
-                .font(.title2)
-                .foregroundStyle(.secondary)
-            Text(user.displayName)
-                .lineLimit(1)
+        HStack(spacing: 12) {
+            ProfileAvatar(name: user.displayName, size: 38)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(user.displayName)
+                    .font(.body.weight(.semibold))
+                    .lineLimit(1)
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+
+            Spacer(minLength: 0)
         }
     }
 }

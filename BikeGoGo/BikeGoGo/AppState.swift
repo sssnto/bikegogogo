@@ -668,7 +668,7 @@ final class AppState: ObservableObject {
         isHandlingVoiceInvitation = true
         voiceCallMessage = nil
         defer { isHandlingVoiceInvitation = false }
-//
+
         do {
             let invitation = try await voiceTokenService.createInvitation(
                 targetID: targetID,

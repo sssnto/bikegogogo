@@ -1,4 +1,19 @@
 services:
+  privacy-policy:
+    image: ghcr.io/sssnto/bikegogogo-privacy:latest
+    container_name: bikegogogo-privacy
+    restart: unless-stopped
+    ports:
+      - "${BIKEGOGO_PRIVACY_PORT:-8081}:80"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    security_opt:
+      - no-new-privileges:true
+
   bikegogogo-server:
     image: ghcr.io/sssnto/bikegogogo-server:latest
     container_name: bikegogogo-server
