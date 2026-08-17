@@ -157,52 +157,7 @@ struct RideTrackingView: View {
 
     private var rideMap: some View {
         Map(position: $camera) {
-            UserAnnotation()
-
-            ForEach(appState.teammateLocations) { location in
-                Annotation(
-                    location.user.displayName,
-                    coordinate: mapDisplayCoordinate(
-                        latitude: location.latitude,
-                        longitude: location.longitude
-                    )
-                ) {
-                    TeammateLocationAnnotation(
-                        name: location.user.displayName,
-                        speedMetersPerSecond: location.speedMetersPerSecond,
-                        state: teamStatus(for: location.user.id)?.state
-                    )
-                }
-            }
-
-            if let meetingPoint = appState.teamMeetingPoint {
-                Annotation(
-                    meetingPoint.title,
-                    coordinate: mapDisplayCoordinate(
-                        latitude: meetingPoint.latitude,
-                        longitude: meetingPoint.longitude
-                    )
-                ) {
-                    MeetingPointAnnotation(title: meetingPoint.title)
-                }
-            }
-
-            if referenceCoordinates.count > 1 {
-                MapPolyline(coordinates: referenceCoordinates)
-                    .stroke(
-                        .blue.opacity(0.8),
-                        style: StrokeStyle(
-                            lineWidth: 4,
-                            lineCap: .round,
-                            dash: [8, 6]
-                        )
-                    )
-            }
-
-            if coordinates.count > 1 {
-                MapPolyline(coordinates: coordinates)
-                    .stroke(BikeGoGoStyle.route, lineWidth: 5)
-            }
+            rideMapContent
         }
         .frame(maxWidth: .infinity)
         .overlay(alignment: .topLeading) {
@@ -293,6 +248,56 @@ struct RideTrackingView: View {
                 return
             }
             focusOnCurrentLocation()
+        }
+    }
+
+    @MapContentBuilder
+    private var rideMapContent: some MapContent {
+        UserAnnotation()
+
+        ForEach(appState.teammateLocations) { location in
+            Annotation(
+                location.user.displayName,
+                coordinate: mapDisplayCoordinate(
+                    latitude: location.latitude,
+                    longitude: location.longitude
+                )
+            ) {
+                TeammateLocationAnnotation(
+                    name: location.user.displayName,
+                    speedMetersPerSecond: location.speedMetersPerSecond,
+                    state: teamStatus(for: location.user.id)?.state
+                )
+            }
+        }
+
+        if let meetingPoint = appState.teamMeetingPoint {
+            Annotation(
+                meetingPoint.title,
+                coordinate: mapDisplayCoordinate(
+                    latitude: meetingPoint.latitude,
+                    longitude: meetingPoint.longitude
+                )
+            ) {
+                MeetingPointAnnotation(title: meetingPoint.title)
+            }
+        }
+
+        if referenceCoordinates.count > 1 {
+            MapPolyline(coordinates: referenceCoordinates)
+                .stroke(
+                    .blue.opacity(0.8),
+                    style: StrokeStyle(
+                        lineWidth: 4,
+                        lineCap: .round,
+                        dash: [8, 6]
+                    )
+                )
+        }
+
+        if coordinates.count > 1 {
+            MapPolyline(coordinates: coordinates)
+                .stroke(BikeGoGoStyle.route, lineWidth: 5)
         }
     }
 
@@ -554,12 +559,7 @@ struct RideTrackingView: View {
             )
         )
         mapItem.name = meetingPoint.title
-        mapItem.openInMaps(
-            launchOptions: [
-                MKLaunchOptionsDirectionsModeKey:
-                    MKLaunchOptionsDirectionsModeCycling
-            ]
-        )
+        mapItem.openInMaps()
     }
 
     private var locationStatus: (text: String, icon: String, color: Color)? {
