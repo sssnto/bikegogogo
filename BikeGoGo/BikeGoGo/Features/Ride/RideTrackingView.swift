@@ -255,7 +255,10 @@ struct RideTrackingView: View {
     private var rideMapContent: some MapContent {
         UserAnnotation()
 
-        ForEach(appState.teammateLocations) { location in
+        ForEach<[GroupLiveLocation], String, TeammateMapItem>(
+            appState.teammateLocations,
+            id: \.id
+        ) { location in
             TeammateMapItem(
                 location: location,
                 state: teamStatus(for: location.user.id)?.state
