@@ -249,14 +249,21 @@ final class AccountClient: ObservableObject {
         }
     }
 
-    func deleteAccount() async -> Bool {
+    func deleteAccount(
+        appleAuthorizationCode: String? = nil,
+        appleRawNonce: String? = nil
+    ) async -> Bool {
         guard !isWorking else { return false }
         isWorking = true
         defer { isWorking = false }
 
         do {
             let body = try JSONEncoder().encode(
-                DeleteAccountBody(confirmation: "DELETE")
+                DeleteAccountBody(
+                    confirmation: "DELETE",
+                    appleAuthorizationCode: appleAuthorizationCode,
+                    appleRawNonce: appleRawNonce
+                )
             )
             try await requestNoContent(
                 path: ["v1", "me"],
@@ -612,6 +619,10 @@ final class AccountClient: ObservableObject {
             case "invalid_apple_identity": return "Apple 身份验证失败，请重新尝试。"
             case "apple_account_mismatch": return "当前账户已经连接了另一个 Apple ID。"
             case "apple_sign_in_required": return "请使用 Apple 登录以继续使用这个账户。"
+            case "apple_reauthentication_required": return "删除 Apple 账户前需要重新验证 Apple ID。"
+            case "apple_reauthentication_failed": return "Apple 重新验证失败，请再试一次。"
+            case "apple_token_revoke_unavailable", "apple_token_service_unavailable":
+                return "暂时无法撤销 Apple 登录授权，请稍后再删除账户。"
             case "group_owner_required": return "只有小队创建者可以执行这个操作。"
             case "group_member_must_be_friend": return "只能邀请已经互相同意的好友。"
             case "group_member_limit": return "每个小队最多 20 人。"
@@ -659,6 +670,8 @@ private struct GroupMemberBody: Encodable {
 
 private struct DeleteAccountBody: Encodable {
     let confirmation: String
+    let appleAuthorizationCode: String?
+    let appleRawNonce: String?
 }
 
 private struct GuestLoginResponse: Decodable {

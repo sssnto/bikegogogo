@@ -4,7 +4,7 @@
 小队、骑行云同步、APNs 推送和受账户鉴权保护的 LiveKit token。
 
 - 设备绑定的访客账户和用户资料。
-- Apple JWT 验证、访客账户绑定和会话退出。
+- Apple JWT 验证、访客账户绑定、会话退出和删除账户前的 Token 撤销。
 - 好友申请、同意、拒绝和好友列表。
 - 小队创建、邀请、移出、退出和解散。
 - 需要登录且校验好友/小队成员关系的 LiveKit room token 签发。
@@ -27,6 +27,10 @@ LIVEKIT_URL=wss://your-project.livekit.cloud
 LIVEKIT_API_KEY=your_key
 LIVEKIT_API_SECRET=your_secret
 APPLE_BUNDLE_ID=com.sssnto.BikeGoGo
+APPLE_SIGN_IN_KEY_ID=your_sign_in_with_apple_key_id
+APPLE_SIGN_IN_TEAM_ID=your_apple_team_id
+APPLE_SIGN_IN_CLIENT_ID=com.sssnto.BikeGoGo
+APPLE_SIGN_IN_KEY_PATH=../deploy/nas/secrets/apple-sign-in-key.p8
 SESSION_TTL_DAYS=30
 ```
 
