@@ -256,7 +256,10 @@ struct RideTrackingView: View {
         UserAnnotation()
 
         ForEach(appState.teammateLocations) { location in
-            teammateMapAnnotation(for: location)
+            TeammateMapItem(
+                location: location,
+                state: teamStatus(for: location.user.id)?.state
+            )
         }
 
         if let meetingPoint = appState.teamMeetingPoint {
@@ -286,24 +289,6 @@ struct RideTrackingView: View {
         if coordinates.count > 1 {
             MapPolyline(coordinates: coordinates)
                 .stroke(BikeGoGoStyle.route, lineWidth: 5)
-        }
-    }
-
-    private func teammateMapAnnotation(
-        for location: GroupLiveLocation
-    ) -> some MapContent {
-        Annotation(
-            location.user.displayName,
-            coordinate: mapDisplayCoordinate(
-                latitude: location.latitude,
-                longitude: location.longitude
-            )
-        ) {
-            TeammateLocationAnnotation(
-                name: location.user.displayName,
-                speedMetersPerSecond: location.speedMetersPerSecond,
-                state: teamStatus(for: location.user.id)?.state
-            )
         }
     }
 
@@ -1163,6 +1148,27 @@ private struct RideStateBadge: View {
                 in: RoundedRectangle(cornerRadius: BikeGoGoStyle.cornerRadius)
             )
             .accessibilityElement(children: .combine)
+    }
+}
+
+private struct TeammateMapItem: MapContent {
+    let location: GroupLiveLocation
+    let state: TeamRideMemberState?
+
+    var body: some MapContent {
+        Annotation(
+            location.user.displayName,
+            coordinate: mapDisplayCoordinate(
+                latitude: location.latitude,
+                longitude: location.longitude
+            )
+        ) {
+            TeammateLocationAnnotation(
+                name: location.user.displayName,
+                speedMetersPerSecond: location.speedMetersPerSecond,
+                state: state
+            )
+        }
     }
 }
 
