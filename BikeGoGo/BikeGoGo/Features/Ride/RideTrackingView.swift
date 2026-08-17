@@ -256,19 +256,7 @@ struct RideTrackingView: View {
         UserAnnotation()
 
         ForEach(appState.teammateLocations) { location in
-            Annotation(
-                location.user.displayName,
-                coordinate: mapDisplayCoordinate(
-                    latitude: location.latitude,
-                    longitude: location.longitude
-                )
-            ) {
-                TeammateLocationAnnotation(
-                    name: location.user.displayName,
-                    speedMetersPerSecond: location.speedMetersPerSecond,
-                    state: teamStatus(for: location.user.id)?.state
-                )
-            }
+            teammateMapAnnotation(for: location)
         }
 
         if let meetingPoint = appState.teamMeetingPoint {
@@ -298,6 +286,24 @@ struct RideTrackingView: View {
         if coordinates.count > 1 {
             MapPolyline(coordinates: coordinates)
                 .stroke(BikeGoGoStyle.route, lineWidth: 5)
+        }
+    }
+
+    private func teammateMapAnnotation(
+        for location: GroupLiveLocation
+    ) -> some MapContent {
+        Annotation(
+            location.user.displayName,
+            coordinate: mapDisplayCoordinate(
+                latitude: location.latitude,
+                longitude: location.longitude
+            )
+        ) {
+            TeammateLocationAnnotation(
+                name: location.user.displayName,
+                speedMetersPerSecond: location.speedMetersPerSecond,
+                state: teamStatus(for: location.user.id)?.state
+            )
         }
     }
 
