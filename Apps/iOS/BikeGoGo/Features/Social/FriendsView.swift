@@ -365,6 +365,7 @@ private struct AccountSettingsView: View {
     @State private var isExportingDiagnostics = false
     @State private var exportedFile: ExportedAccountFile?
     @State private var confirmsDeletion = false
+    @State private var authorizesAppleAccountDeletion = false
 
     private var account: AccountClient {
         appState.accountClient
@@ -498,12 +499,23 @@ private struct AccountSettingsView: View {
             ActivityView(activityItems: [file.url])
                 .presentationDetents([.medium, .large])
         }
+        .sheet(isPresented: $authorizesAppleAccountDeletion) {
+            AppleAccountDeletionAuthorizationSheet(account: account) {
+                authorizesAppleAccountDeletion = false
+                dismiss()
+            }
+            .environmentObject(appState)
+        }
         .alert("永久删除账户？", isPresented: $confirmsDeletion) {
             Button("取消", role: .cancel) {}
             Button("永久删除", role: .destructive) {
-                Task {
-                    if await appState.deleteAccountAndLocalData() {
-                        dismiss()
+                if account.currentUser?.isAppleAccount == true {
+                    authorizesAppleAccountDeletion = true
+                } else {
+                    Task {
+                        if await appState.deleteAccountAndLocalData() {
+                            dismiss()
+                        }
                     }
                 }
             }
@@ -684,10 +696,10 @@ private struct AppleSignInControl: View {
     var body: some View {
         SignInWithAppleButton(.continue) { request in
             do {
-                let nonce = try Self.randomNonce()
+                let nonce = try AppleAuthorizationNonce.random()
                 rawNonce = nonce
                 request.requestedScopes = [.fullName, .email]
-                request.nonce = Self.sha256(nonce)
+                request.nonce = AppleAuthorizationNonce.sha256(nonce)
             } catch {
                 account.errorMessage = "无法准备 Apple 登录，请稍后重试。"
             }
@@ -728,13 +740,119 @@ private struct AppleSignInControl: View {
         .disabled(account.isWorking)
     }
 
-    private static func sha256(_ value: String) -> String {
+}
+
+private struct AppleAccountDeletionAuthorizationSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var appState: AppState
+    @ObservedObject var account: AccountClient
+    let onDeleted: () -> Void
+
+    @State private var rawNonce: String?
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 24) {
+                Image(systemName: "person.crop.circle.badge.minus")
+                    .font(.system(size: 44))
+                    .foregroundStyle(.red)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("验证 Apple ID")
+                        .font(.title2.bold())
+                    Text("为了确认账户由你本人删除，BikeGoGo 会重新验证当前 Apple ID，并在删除数据前撤销该 App 的 Apple 登录授权。")
+                        .foregroundStyle(.secondary)
+                }
+
+                SignInWithAppleButton(.continue) { request in
+                    do {
+                        let nonce = try AppleAuthorizationNonce.random()
+                        rawNonce = nonce
+                        request.nonce = AppleAuthorizationNonce.sha256(nonce)
+                    } catch {
+                        account.errorMessage = "无法准备 Apple 验证，请稍后重试。"
+                    }
+                } onCompletion: { result in
+                    completeAuthorization(result)
+                }
+                .signInWithAppleButtonStyle(.black)
+                .frame(maxWidth: .infinity, minHeight: 50, maxHeight: 50)
+                .disabled(account.isWorking)
+
+                if account.isWorking {
+                    HStack(spacing: 10) {
+                        ProgressView()
+                        Text("正在撤销授权并删除账户")
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+
+                Spacer()
+            }
+            .padding(24)
+            .navigationTitle("删除账户")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { dismiss() }
+                        .disabled(account.isWorking)
+                }
+            }
+        }
+        .interactiveDismissDisabled(account.isWorking)
+        .alert(
+            "账户删除失败",
+            isPresented: Binding(
+                get: { account.errorMessage != nil },
+                set: { if !$0 { account.errorMessage = nil } }
+            )
+        ) {
+            Button("知道了") { account.errorMessage = nil }
+        } message: {
+            Text(account.errorMessage ?? "")
+        }
+    }
+
+    private func completeAuthorization(
+        _ result: Result<ASAuthorization, Error>
+    ) {
+        defer { rawNonce = nil }
+        switch result {
+        case let .success(authorization):
+            guard let rawNonce,
+                  let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
+                  let codeData = credential.authorizationCode,
+                  let authorizationCode = String(data: codeData, encoding: .utf8) else {
+                account.errorMessage = "没有收到有效的 Apple 删除授权，请重新尝试。"
+                return
+            }
+            Task {
+                if await appState.deleteAccountAndLocalData(
+                    appleAuthorizationCode: authorizationCode,
+                    appleRawNonce: rawNonce
+                ) {
+                    dismiss()
+                    onDeleted()
+                }
+            }
+
+        case let .failure(error):
+            if (error as? ASAuthorizationError)?.code != .canceled {
+                account.errorMessage = "Apple 验证未完成：\(error.localizedDescription)"
+            }
+        }
+    }
+}
+
+private enum AppleAuthorizationNonce {
+    static func sha256(_ value: String) -> String {
         SHA256.hash(data: Data(value.utf8))
             .map { String(format: "%02x", $0) }
             .joined()
     }
 
-    private static func randomNonce(length: Int = 32) throws -> String {
+    static func random(length: Int = 32) throws -> String {
         let characters = Array(
             "0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._"
         )

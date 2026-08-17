@@ -6,6 +6,10 @@ import path from "node:path";
 import test from "node:test";
 
 import { createApp } from "../src/app.js";
+import {
+  AppleTokenClientError,
+  type AppleTokenClient
+} from "../src/apple-token-client.js";
 import type {
   NotificationSender,
   PushNotification
@@ -401,6 +405,175 @@ test("Apple sign in binds the guest account and supports logout", async () => {
       headers: { authorization: `Bearer ${appleSession.accessToken}` }
     });
     assert.equal(me.statusCode, 401);
+  } finally {
+    await app.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("Apple account deletion requires reauthentication and revokes Apple tokens", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "bikegogogo-test-"));
+  const dataFile = path.join(directory, "data.json");
+  const revoked: Array<{ token: string; tokenType: string }> = [];
+  const appleTokenClient: AppleTokenClient = {
+    async exchangeAuthorizationCode(code) {
+      return {
+        accessToken: `access-${code}`,
+        refreshToken: `refresh-${code}`,
+        identityToken: code === "mismatched-code"
+          ? "b".repeat(120)
+          : "a".repeat(120)
+      };
+    },
+    async revoke(token, tokenType) {
+      revoked.push({ token, tokenType });
+    }
+  };
+  const app = await createApp({
+    ...configFor(dataFile),
+    appleTokenClient
+  });
+
+  try {
+    const guest = (await app.inject({
+      method: "POST",
+      url: "/v1/auth/guest",
+      payload: {
+        deviceId: "apple-delete-device-identifier",
+        displayName: "Apple Delete Rider"
+      }
+    })).json();
+    const apple = (await app.inject({
+      method: "POST",
+      url: "/v1/auth/apple",
+      headers: { authorization: `Bearer ${guest.accessToken}` },
+      payload: {
+        identityToken: "a".repeat(120),
+        rawNonce: "apple-delete-login-nonce",
+        deviceId: "apple-delete-device-identifier"
+      }
+    })).json();
+
+    const missingReauthentication = await app.inject({
+      method: "DELETE",
+      url: "/v1/me",
+      headers: { authorization: `Bearer ${apple.accessToken}` },
+      payload: { confirmation: "DELETE" }
+    });
+    assert.equal(missingReauthentication.statusCode, 400);
+    assert.equal(
+      missingReauthentication.json().error,
+      "apple_reauthentication_required"
+    );
+
+    const mismatchedAccount = await app.inject({
+      method: "DELETE",
+      url: "/v1/me",
+      headers: { authorization: `Bearer ${apple.accessToken}` },
+      payload: {
+        confirmation: "DELETE",
+        appleAuthorizationCode: "mismatched-code",
+        appleRawNonce: "apple-delete-request-nonce"
+      }
+    });
+    assert.equal(mismatchedAccount.statusCode, 409);
+    assert.equal(mismatchedAccount.json().error, "apple_account_mismatch");
+    assert.deepEqual(revoked, []);
+
+    const deleted = await app.inject({
+      method: "DELETE",
+      url: "/v1/me",
+      headers: { authorization: `Bearer ${apple.accessToken}` },
+      payload: {
+        confirmation: "DELETE",
+        appleAuthorizationCode: "matching-code",
+        appleRawNonce: "apple-delete-request-nonce"
+      }
+    });
+    assert.equal(deleted.statusCode, 204);
+    assert.deepEqual(revoked, [{
+      token: "refresh-matching-code",
+      tokenType: "refresh_token"
+    }]);
+
+    const deletedSession = await app.inject({
+      method: "GET",
+      url: "/v1/me",
+      headers: { authorization: `Bearer ${apple.accessToken}` }
+    });
+    assert.equal(deletedSession.statusCode, 401);
+  } finally {
+    await app.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("Apple token revocation failure leaves the account intact", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "bikegogogo-test-"));
+  const dataFile = path.join(directory, "data.json");
+  const appleTokenClient: AppleTokenClient = {
+    async exchangeAuthorizationCode() {
+      return {
+        accessToken: "access-token",
+        refreshToken: "refresh-token",
+        identityToken: "a".repeat(120)
+      };
+    },
+    async revoke() {
+      throw new AppleTokenClientError(
+        "service_unavailable",
+        "Apple token service is unavailable"
+      );
+    }
+  };
+  const app = await createApp({
+    ...configFor(dataFile),
+    appleTokenClient
+  });
+
+  try {
+    const guest = (await app.inject({
+      method: "POST",
+      url: "/v1/auth/guest",
+      payload: {
+        deviceId: "apple-revoke-failure-device",
+        displayName: "Apple Revoke Rider"
+      }
+    })).json();
+    const apple = (await app.inject({
+      method: "POST",
+      url: "/v1/auth/apple",
+      headers: { authorization: `Bearer ${guest.accessToken}` },
+      payload: {
+        identityToken: "a".repeat(120),
+        rawNonce: "apple-revoke-login-nonce",
+        deviceId: "apple-revoke-failure-device"
+      }
+    })).json();
+
+    const deletion = await app.inject({
+      method: "DELETE",
+      url: "/v1/me",
+      headers: { authorization: `Bearer ${apple.accessToken}` },
+      payload: {
+        confirmation: "DELETE",
+        appleAuthorizationCode: "matching-code",
+        appleRawNonce: "apple-revoke-request-nonce"
+      }
+    });
+    assert.equal(deletion.statusCode, 503);
+    assert.equal(
+      deletion.json().error,
+      "apple_token_service_unavailable"
+    );
+
+    const me = await app.inject({
+      method: "GET",
+      url: "/v1/me",
+      headers: { authorization: `Bearer ${apple.accessToken}` }
+    });
+    assert.equal(me.statusCode, 200);
+    assert.equal(me.json().user.id, apple.user.id);
   } finally {
     await app.close();
     await rm(directory, { recursive: true, force: true });

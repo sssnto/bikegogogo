@@ -10,6 +10,10 @@ import {
   createAppleIdentityVerifier,
   type AppleIdentityVerifier
 } from "./apple-auth.js";
+import {
+  AppleTokenClientError,
+  type AppleTokenClient
+} from "./apple-token-client.js";
 import type {
   NotificationSender,
   PushNotification
@@ -42,6 +46,7 @@ export type AppConfig = {
   trustProxy?: boolean | number | string;
   revision?: string;
   appleIdentityVerifier?: AppleIdentityVerifier;
+  appleTokenClient?: AppleTokenClient;
   notificationSenders?: NotificationSender[];
 };
 
@@ -327,14 +332,52 @@ export async function createApp(config: AppConfig) {
   });
 
   const deleteAccountSchema = z.object({
-    confirmation: z.literal("DELETE")
+    confirmation: z.literal("DELETE"),
+    appleAuthorizationCode: z.string().min(8).max(10_000).optional(),
+    appleRawNonce: z.string().min(16).max(128).optional()
   });
 
   app.delete("/v1/me", {
     config: { rateLimit: { max: 3, timeWindow: "1 hour" } }
   }, async (request, reply) => {
     const currentUser = authenticatedUser(request);
-    deleteAccountSchema.parse(request.body);
+    const body = deleteAccountSchema.parse(request.body);
+    if (currentUser.appleSubject) {
+      if (!config.appleTokenClient) {
+        throw new StoreError(
+          "apple_token_revoke_unavailable",
+          503,
+          "Sign in with Apple account deletion is temporarily unavailable"
+        );
+      }
+      if (!body.appleAuthorizationCode || !body.appleRawNonce) {
+        throw new StoreError(
+          "apple_reauthentication_required",
+          400,
+          "Sign in with Apple is required before deleting this account"
+        );
+      }
+
+      const tokens = await config.appleTokenClient.exchangeAuthorizationCode(
+        body.appleAuthorizationCode
+      );
+      const identity = await verifyAppleIdentity(
+        tokens.identityToken,
+        body.appleRawNonce
+      );
+      if (identity.subject !== currentUser.appleSubject) {
+        throw new StoreError(
+          "apple_account_mismatch",
+          409,
+          "The Apple account does not match the current BikeGoGo account"
+        );
+      }
+      const token = tokens.refreshToken ?? tokens.accessToken;
+      await config.appleTokenClient.revoke(
+        token,
+        tokens.refreshToken ? "refresh_token" : "access_token"
+      );
+    }
     const result = await store.deleteAccount(currentUser.id);
     liveLocations.removeUser(currentUser.id);
     meetingPoints.removeUser(currentUser.id);
@@ -994,6 +1037,18 @@ export async function createApp(config: AppConfig) {
       request.log.warn({ code: "invalid_apple_identity" }, error.message);
       return reply.status(401).send({
         error: "invalid_apple_identity",
+        message: error.message,
+        requestId: request.id
+      });
+    }
+
+    if (error instanceof AppleTokenClientError) {
+      const statusCode = error.code === "authorization_rejected" ? 401 : 503;
+      request.log.warn({ code: error.code }, error.message);
+      return reply.status(statusCode).send({
+        error: error.code === "authorization_rejected"
+          ? "apple_reauthentication_failed"
+          : "apple_token_service_unavailable",
         message: error.message,
         requestId: request.id
       });

@@ -561,12 +561,18 @@ final class AppState: ObservableObject {
         currentRide.state != .recording && currentRide.state != .paused
     }
 
-    func deleteAccountAndLocalData() async -> Bool {
+    func deleteAccountAndLocalData(
+        appleAuthorizationCode: String? = nil,
+        appleRawNonce: String? = nil
+    ) async -> Bool {
         guard canDeleteAccount else {
             accountClient.errorMessage = "请先结束或放弃当前骑行，再永久删除账户。"
             return false
         }
-        guard await accountClient.deleteAccount() else { return false }
+        guard await accountClient.deleteAccount(
+            appleAuthorizationCode: appleAuthorizationCode,
+            appleRawNonce: appleRawNonce
+        ) else { return false }
 
         await voiceClient.leave()
         await stopRideLocationSharing()

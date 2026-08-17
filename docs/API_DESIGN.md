@@ -100,13 +100,17 @@ Content-Type: application/json
 
 ```json
 {
-  "confirmation": "DELETE"
+  "confirmation": "DELETE",
+  "appleAuthorizationCode": "Apple 重新认证返回的一次性授权码",
+  "appleRawNonce": "本次重新认证使用的原始 nonce"
 }
 ```
 
 成功返回 `204` 并立即使该账户的全部会话失效。服务端同时删除好友申请、好友关系、
 本人创建的小队、本人骑行记录、推送 token 和语音邀请；本人会从其他人创建的小队中
-移除。缺少精确确认字符串时返回 `400`。
+移除。访客账户只需要 `confirmation`。Apple 账户必须同时提供重新认证结果；服务端
+验证 Apple 身份与当前账户一致，先调用 Apple REST API 撤销登录 Token，再删除数据。
+缺少精确确认字符串或 Apple 重新认证信息时返回 `400`。
 
 ## 好友
 

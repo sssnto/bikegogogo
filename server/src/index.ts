@@ -7,6 +7,7 @@ import {
   type APNsEnvironment,
   type NotificationSender
 } from "./apns.js";
+import { createAppleTokenClient } from "./apple-token-client.js";
 
 dotenv.config();
 
@@ -32,6 +33,10 @@ const envSchema = z.object({
   DATA_FILE: z.string().default("./data/bikegogogo.json"),
   DATABASE_URL: z.string().min(1).optional(),
   APPLE_BUNDLE_ID: z.string().default("com.sssnto.BikeGoGo"),
+  APPLE_SIGN_IN_KEY_ID: optionalNonEmptyString,
+  APPLE_SIGN_IN_TEAM_ID: optionalNonEmptyString,
+  APPLE_SIGN_IN_CLIENT_ID: optionalNonEmptyString,
+  APPLE_SIGN_IN_KEY_PATH: optionalNonEmptyString,
   SESSION_TTL_DAYS: z.coerce.number().int().min(1).max(365).default(30),
   TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(10).default(1),
   APP_REVISION: z.string().min(1).default("development"),
@@ -90,6 +95,26 @@ if (env.APNS_PRODUCTION_KEY_ID) {
   }));
 }
 
+const appleSignInValues = [
+  env.APPLE_SIGN_IN_KEY_ID,
+  env.APPLE_SIGN_IN_TEAM_ID,
+  env.APPLE_SIGN_IN_KEY_PATH
+];
+const appleSignInConfigured = appleSignInValues.some(Boolean);
+if (appleSignInConfigured && appleSignInValues.some((value) => !value)) {
+  throw new Error(
+    "APPLE_SIGN_IN_KEY_ID, APPLE_SIGN_IN_TEAM_ID and APPLE_SIGN_IN_KEY_PATH must be configured together"
+  );
+}
+const appleTokenClient = appleSignInConfigured
+  ? await createAppleTokenClient({
+      keyId: env.APPLE_SIGN_IN_KEY_ID!,
+      teamId: env.APPLE_SIGN_IN_TEAM_ID!,
+      clientId: env.APPLE_SIGN_IN_CLIENT_ID ?? env.APPLE_BUNDLE_ID,
+      privateKeyPath: env.APPLE_SIGN_IN_KEY_PATH!
+    })
+  : undefined;
+
 const app = await createApp({
   livekitUrl: env.LIVEKIT_URL,
   livekitApiKey: env.LIVEKIT_API_KEY,
@@ -101,6 +126,7 @@ const app = await createApp({
   sessionTTLDays: env.SESSION_TTL_DAYS,
   trustProxy: env.TRUST_PROXY_HOPS === 0 ? false : env.TRUST_PROXY_HOPS,
   revision: env.APP_REVISION,
+  appleTokenClient,
   notificationSenders
 });
 

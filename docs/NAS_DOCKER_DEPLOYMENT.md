@@ -49,6 +49,10 @@ LIVEKIT_API_SECRET=your_livekit_api_secret
 ALLOWED_ORIGINS=
 DATA_FILE=/data/bikegogogo.json
 APPLE_BUNDLE_ID=com.sssnto.BikeGoGo
+APPLE_SIGN_IN_KEY_ID=<Sign in with Apple Key ID>
+APPLE_SIGN_IN_TEAM_ID=FR9RTRV9BC
+APPLE_SIGN_IN_CLIENT_ID=com.sssnto.BikeGoGo
+APPLE_SIGN_IN_KEY_PATH=/run/secrets/apple-sign-in-key.p8
 SESSION_TTL_DAYS=30
 TRUST_PROXY_HOPS=1
 POSTGRES_DB=bikegogogo
@@ -73,11 +77,40 @@ APNS_PRODUCTION_KEY_PATH=/run/secrets/apns-production-key.p8
   真实客户端 IP 分开计算，而不是让所有用户共用 NAS 代理 IP 的额度。不要填写大于实际
   代理层数的值，否则客户端可能伪造转发来源。若请求路径为
   `客户端 -> CDN -> Nginx Proxy Manager -> 后端`，填写 `2`。
-- Apple 身份公钥由服务端从 Apple 官方 JWKS 自动读取，不需要在 NAS 保存 Apple 私钥。
+- Apple 身份公钥由服务端从 Apple 官方 JWKS 自动读取。账户删除还需要后端调用 Apple
+  Token 撤销接口，因此 NAS 必须另外保存启用了 **Sign in with Apple** 的私钥。
+- `apple-sign-in-key.p8` 不等同于只启用了 APNs 的推送私钥。只有 Apple Developer
+  后台明确为同一 Key 启用了 Sign in with Apple 时才能共用；建议使用独立 Key。
 - PostgreSQL 不映射宿主机端口，只允许同一 Compose 网络中的后端访问。
 - 配置 `DATABASE_URL` 后，PostgreSQL 是主存储；服务端会继续更新
   `/data/bikegogogo.json`，作为便于检查和紧急回滚的镜像。
 - APNs `.p8` 通过只读文件挂载，不能写入 `.env` 或提交到 GitHub。
+
+### 创建 Sign in with Apple 私钥
+
+1. 登录 ，进入 **Certificates, Identifiers & Profiles**。
+2. 在 **Identifiers** 中打开 `com.sssnto.BikeGoGo`，确认 **Sign in with Apple** 已启用，
+   并配置为 Primary App ID。
+3. 进入 **Keys**，点击 `+`，名称可填写 `BikeGoGo Sign in with Apple`。
+4. 勾选 **Sign in with Apple**，点击 **Configure**，选择 BikeGoGo 的 Primary App ID。
+5. 完成创建后记录 Key ID，并立即下载 `.p8`。Apple 私钥只能下载一次。
+6. 在 NAS 的 `deploy/nas` 目录执行：
+
+```bash
+cp /你的下载目录/AuthKey_<KEY_ID>.p8 secrets/apple-sign-in-key.p8
+chmod 600 secrets/apple-sign-in-key.p8
+```
+
+7. 在 `.env` 中填写：
+
+```bash
+APPLE_SIGN_IN_KEY_ID=<KEY_ID>
+APPLE_SIGN_IN_TEAM_ID=FR9RTRV9BC
+APPLE_SIGN_IN_CLIENT_ID=com.sssnto.BikeGoGo
+```
+
+原生 iOS App 使用 Bundle ID 作为 Client ID，不需要为这条原生删除流程新增网站 Services ID。
+Team ID 可以在 Apple Developer 的 Membership Details 中查看。
 
 ## Docker Run 部署
 
@@ -173,6 +206,10 @@ services:
       DATA_FILE: "/data/bikegogogo.json"
       DATABASE_URL: "postgresql://${POSTGRES_USER:-bikegogogo}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/nas/.env}@postgres:5432/${POSTGRES_DB:-bikegogogo}"
       APPLE_BUNDLE_ID: "com.sssnto.BikeGoGo"
+      APPLE_SIGN_IN_KEY_ID: "${APPLE_SIGN_IN_KEY_ID}"
+      APPLE_SIGN_IN_TEAM_ID: "${APPLE_SIGN_IN_TEAM_ID}"
+      APPLE_SIGN_IN_CLIENT_ID: "${APPLE_SIGN_IN_CLIENT_ID}"
+      APPLE_SIGN_IN_KEY_PATH: "/run/secrets/apple-sign-in-key.p8"
       SESSION_TTL_DAYS: "30"
       APNS_KEY_ID: "${APNS_KEY_ID}"
       APNS_TEAM_ID: "${APNS_TEAM_ID}"
@@ -215,6 +252,9 @@ volumes:
 LIVEKIT_API_KEY=your_livekit_api_key
 LIVEKIT_API_SECRET=your_livekit_api_secret
 APPLE_BUNDLE_ID=com.sssnto.BikeGoGo
+APPLE_SIGN_IN_KEY_ID=<Sign in with Apple Key ID>
+APPLE_SIGN_IN_TEAM_ID=FR9RTRV9BC
+APPLE_SIGN_IN_CLIENT_ID=com.sssnto.BikeGoGo
 SESSION_TTL_DAYS=30
 POSTGRES_DB=bikegogogo
 POSTGRES_USER=bikegogogo
