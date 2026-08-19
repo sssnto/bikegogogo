@@ -988,7 +988,7 @@ export async function createApp(config: AppConfig) {
   app.get("/v1/rides/:rideId", async (request) => {
     const currentUser = authenticatedUser(request);
     const params = rideParamsSchema.parse(request.params);
-    const ride = store.rideFor(currentUser.id, params.rideId);
+    const ride = store.rideFor(currentUser.id, params.rideId.toLowerCase());
     if (!ride) {
       throw new StoreError("ride_not_found", 404, "Ride not found");
     }
@@ -999,17 +999,18 @@ export async function createApp(config: AppConfig) {
     const currentUser = authenticatedUser(request);
     const params = rideParamsSchema.parse(request.params);
     const body = rideSchema.parse(request.body);
-    if (body.id !== params.rideId) {
+    const rideId = body.id.toLowerCase();
+    if (rideId !== params.rideId.toLowerCase()) {
       throw new StoreError("ride_id_mismatch", 400, "Ride ID does not match URL");
     }
-    const ride = await store.upsertRide(currentUser.id, body);
+    const ride = await store.upsertRide(currentUser.id, { ...body, id: rideId });
     return { ride: publicRide(ride) };
   });
 
   app.delete("/v1/rides/:rideId", async (request, reply) => {
     const currentUser = authenticatedUser(request);
     const params = rideParamsSchema.parse(request.params);
-    await store.deleteRide(currentUser.id, params.rideId);
+    await store.deleteRide(currentUser.id, params.rideId.toLowerCase());
     return reply.status(204).send();
   });
 

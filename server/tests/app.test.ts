@@ -1302,7 +1302,7 @@ test("finished rides sync per account and survive reload", async () => {
     })).json();
     const rideId = "61af5aa8-3b97-4538-b2dd-da986b183142";
     const ride = {
-      id: rideId,
+      id: rideId.toUpperCase(),
       title: "Morning Ride",
       state: "finished",
       source: "merged",
