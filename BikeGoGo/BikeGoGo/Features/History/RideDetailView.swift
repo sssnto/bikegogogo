@@ -130,10 +130,7 @@ struct RideDetailView: View {
                     rows: [
                         RideDetailRowData(
                             title: "开始时间",
-                            value: ride.startedAt.formatted(
-                                date: .abbreviated,
-                                time: .shortened
-                            )
+                            value: ChineseDateFormatting.dateTime(ride.startedAt)
                         ),
                         RideDetailRowData(title: "数据来源", value: sourceText)
                     ]
@@ -178,10 +175,10 @@ struct RideDetailView: View {
                 )
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(ride.startedAt.formatted(date: .complete, time: .omitted))
+                Text(ChineseDateFormatting.fullDate(ride.startedAt))
                     .font(.headline)
                 Text(
-                    "\(ride.startedAt.formatted(date: .omitted, time: .shortened)) · \(sourceText)"
+                    "\(ChineseDateFormatting.time(ride.startedAt)) · \(sourceText)"
                 )
                 .font(.caption)
                 .foregroundStyle(.secondary)

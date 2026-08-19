@@ -5,6 +5,7 @@ actor LocalRideStore {
     private let fileManager: FileManager
     private let ridesURL: URL
     private let activeRideURL: URL
+    private let excludedRideIDsURL: URL
     private let exportsDirectoryURL: URL
 
     init(fileManager: FileManager = .default) {
@@ -15,6 +16,7 @@ actor LocalRideStore {
 
         self.ridesURL = appDirectory.appendingPathComponent("rides.json")
         self.activeRideURL = appDirectory.appendingPathComponent("active-ride.json")
+        self.excludedRideIDsURL = appDirectory.appendingPathComponent("excluded-ride-ids.json")
         self.exportsDirectoryURL = documents.appendingPathComponent("BikeGoGo Exports", isDirectory: true)
     }
 
@@ -34,6 +36,23 @@ actor LocalRideStore {
         )
         let data = try JSONEncoder.bikeGoGo.encode(rides)
         try data.write(to: ridesURL, options: [.atomic])
+    }
+
+    func loadExcludedRideIDs() async throws -> Set<UUID> {
+        guard fileManager.fileExists(atPath: excludedRideIDsURL.path) else {
+            return []
+        }
+        let data = try Data(contentsOf: excludedRideIDsURL)
+        return Set(try JSONDecoder().decode([UUID].self, from: data))
+    }
+
+    func saveExcludedRideIDs(_ rideIDs: Set<UUID>) async throws {
+        try fileManager.createDirectory(
+            at: excludedRideIDsURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        let data = try JSONEncoder().encode(rideIDs.sorted { $0.uuidString < $1.uuidString })
+        try data.write(to: excludedRideIDsURL, options: [.atomic])
     }
 
     func loadActiveRide() async throws -> RideSession? {
@@ -60,7 +79,8 @@ actor LocalRideStore {
     }
 
     func deleteAllData() async throws {
-        for url in [ridesURL, activeRideURL] where fileManager.fileExists(atPath: url.path) {
+        for url in [ridesURL, activeRideURL, excludedRideIDsURL]
+        where fileManager.fileExists(atPath: url.path) {
             try fileManager.removeItem(at: url)
         }
         if fileManager.fileExists(atPath: exportsDirectoryURL.path) {

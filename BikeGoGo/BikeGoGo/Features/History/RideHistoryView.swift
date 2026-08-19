@@ -3,6 +3,7 @@ import SwiftUI
 
 struct RideHistoryView: View {
     @EnvironmentObject private var appState: AppState
+    @State private var showsIncompatibleCleanupConfirmation = false
 
     var body: some View {
         NavigationStack {
@@ -37,6 +38,20 @@ struct RideHistoryView: View {
                             : "正在同步骑行记录"
                     )
                 }
+            }
+            .confirmationDialog(
+                "清理不兼容记录？",
+                isPresented: $showsIncompatibleCleanupConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button(
+                    "删除 \(appState.incompatibleRideIDs.count) 条记录",
+                    role: .destructive
+                ) {
+                    Task { await appState.deleteIncompatibleRides() }
+                }
+            } message: {
+                Text("这些记录将从 BikeGoGo 本地历史中删除，之后也不会再次从苹果健身导入。苹果健康中的原始训练不会被删除。")
             }
         }
     }
@@ -125,11 +140,14 @@ struct RideHistoryView: View {
             RideHistoryStatusRow(
                 title: message,
                 systemImage: "exclamationmark.icloud",
-                tint: BikeGoGoStyle.warning
-            )
+                tint: BikeGoGoStyle.warning,
+                actionTitle: appState.incompatibleRideIDs.isEmpty ? nil : "清理"
+            ) {
+                showsIncompatibleCleanupConfirmation = true
+            }
         } else if let lastRideSyncAt = appState.lastRideSyncAt {
             RideHistoryStatusRow(
-                title: "已同步 · \(lastRideSyncAt.formatted(date: .omitted, time: .shortened))",
+                title: "已同步 · \(ChineseDateFormatting.time(lastRideSyncAt))",
                 systemImage: "checkmark.icloud",
                 tint: BikeGoGoStyle.brand
             )
@@ -223,7 +241,7 @@ private struct RideHistoryRow: View {
                     }
                 }
 
-                Text(ride.startedAt.formatted(date: .abbreviated, time: .shortened))
+                Text(ChineseDateFormatting.dateTime(ride.startedAt))
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
@@ -265,6 +283,8 @@ private struct RideHistoryStatusRow: View {
     let systemImage: String
     let tint: Color
     var showsProgress = false
+    var actionTitle: String?
+    var action: (() -> Void)?
 
     var body: some View {
         HStack(spacing: 10) {
@@ -278,6 +298,13 @@ private struct RideHistoryStatusRow: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .lineLimit(2)
+            Spacer(minLength: 8)
+            if let actionTitle, let action {
+                Button(actionTitle, action: action)
+                    .font(.subheadline.weight(.semibold))
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(tint)
+            }
         }
     }
 }

@@ -80,6 +80,7 @@ final class AppState: ObservableObject {
     @Published private(set) var isSyncingRides = false
     @Published private(set) var rideSyncMessage: String?
     @Published private(set) var lastRideSyncAt: Date?
+    @Published private(set) var incompatibleRideIDs: Set<UUID> = []
     @Published private(set) var isImportingHealthKit = false
     @Published private(set) var healthKitImportMessage: String?
     @Published private(set) var lastHealthKitImportAt: Date?
@@ -123,6 +124,7 @@ final class AppState: ObservableObject {
     private var latestWatchCadenceRPM = 0.0
     private var latestWatchCyclingPowerWatts = 0.0
     private var healthKitRefreshTask: Task<Void, Never>?
+    private var excludedHealthKitRideIDs: Set<UUID> = []
     private var autoPauseEvaluationTask: Task<Void, Never>?
     private var autoPauseMonitor = RideAutoPauseMonitor()
     private var recorderNeedsRestart = false
@@ -1235,16 +1237,41 @@ final class AppState: ObservableObject {
         defer { isSyncingRides = false }
 
         do {
-            recentRides = try await rideCloudClient.synchronize(
+            let result = try await rideCloudClient.synchronize(
                 localRides: recentRides,
                 accessToken: accessToken
             )
+            recentRides = result.rides
             try await rideStore.saveRides(recentRides)
-            lastRideSyncAt = Date()
+            incompatibleRideIDs = Set(
+                result.failures
+                    .filter(\.isIncompatibleRecord)
+                    .map(\.rideID)
+            )
+            if let firstFailure = result.failures.first {
+                rideSyncMessage = "有 \(result.failures.count) 条记录未上传：\(firstFailure.userFacingReason)。本地记录已保留。"
+                result.failures.forEach {
+                    print("Ride cloud upload failed: \($0.diagnosticDescription)")
+                }
+            } else {
+                lastRideSyncAt = Date()
+            }
         } catch {
-            rideSyncMessage = "云同步暂时不可用，本地骑行记录不受影响。"
+            rideSyncMessage = "云同步失败：\(rideCloudFailureReason(error))。本地骑行记录不受影响。"
             print("Ride cloud sync failed: \(error.localizedDescription)")
         }
+    }
+
+    private func rideCloudFailureReason(_ error: Error) -> String {
+        if let cloudError = error as? RideCloudError {
+            return cloudError.userFacingReason
+        }
+        if let urlError = error as? URLError {
+            return urlError.code == .notConnectedToInternet
+                ? "网络未连接"
+                : "网络连接失败"
+        }
+        return "服务器响应异常"
     }
 
     func refreshRideHistory() async {
@@ -1271,7 +1298,9 @@ final class AppState: ObservableObject {
             } else {
                 importResult = try await healthKitRideImporter.importOutdoorCyclingRides()
             }
-            let imported = importResult.rides
+            let imported = importResult.rides.filter {
+                !excludedHealthKitRideIDs.contains($0.id)
+            }
             recentRides = RideHistoryMerger.merging(
                 existing: recentRides,
                 imported: imported
@@ -1295,7 +1324,9 @@ final class AppState: ObservableObject {
                 try await rideCloudClient.delete(rideID: ride.id, accessToken: accessToken)
             }
             recentRides.removeAll { $0.id == ride.id }
+            excludedHealthKitRideIDs.insert(ride.id)
             try await rideStore.saveRides(recentRides)
+            try await rideStore.saveExcludedRideIDs(excludedHealthKitRideIDs)
             rideSyncMessage = nil
         } catch {
             rideSyncMessage = "删除失败，请检查网络后重试。"
@@ -1303,8 +1334,28 @@ final class AppState: ObservableObject {
         }
     }
 
+    func deleteIncompatibleRides() async {
+        let rideIDs = incompatibleRideIDs
+        guard !rideIDs.isEmpty else { return }
+
+        do {
+            let remainingRides = recentRides.filter { !rideIDs.contains($0.id) }
+            let updatedExcludedRideIDs = excludedHealthKitRideIDs.union(rideIDs)
+            try await rideStore.saveRides(remainingRides)
+            try await rideStore.saveExcludedRideIDs(updatedExcludedRideIDs)
+            recentRides = remainingRides
+            excludedHealthKitRideIDs = updatedExcludedRideIDs
+            incompatibleRideIDs = []
+            rideSyncMessage = "已清理 \(rideIDs.count) 条不兼容的历史记录。"
+        } catch {
+            rideSyncMessage = "清理失败，本地记录未被修改。"
+            print("Deleting incompatible rides failed: \(error.localizedDescription)")
+        }
+    }
+
     private func loadStoredRides() async {
         do {
+            excludedHealthKitRideIDs = try await rideStore.loadExcludedRideIDs()
             let storedRides = try await rideStore.loadRides()
             if !storedRides.isEmpty {
                 recentRides = storedRides

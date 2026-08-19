@@ -256,7 +256,7 @@ struct RideShareDataOverlay: View {
             Text("BikeGoGo")
                 .fontWeight(.bold)
             Spacer()
-            Text(ride.startedAt.formatted(date: .abbreviated, time: .omitted))
+            Text(ChineseDateFormatting.date(ride.startedAt))
         }
         .font(.system(size: width * 0.035))
         .foregroundStyle(.white.opacity(0.9))
