@@ -5,6 +5,8 @@ import WatchConnectivity
 final class WatchSessionBridge: NSObject, ObservableObject {
     @Published private(set) var isMuted = false
     @Published private(set) var remoteRideState = "idle"
+    @Published private(set) var isActivated = false
+    @Published private(set) var isPhoneReachable = false
 
     var onRideStateReceived: ((String) -> Void)?
 
@@ -16,6 +18,7 @@ final class WatchSessionBridge: NSObject, ObservableObject {
         guard let session else { return }
         session.delegate = self
         session.activate()
+        isPhoneReachable = session.isReachable
     }
 
     func sendRideState(_ state: String) {
@@ -86,6 +89,16 @@ extension WatchSessionBridge: WCSessionDelegate {
     ) {
         if let error {
             print("WatchConnectivity activation failed: \(error.localizedDescription)")
+        }
+        Task { @MainActor [weak self] in
+            self?.isActivated = activationState == .activated
+            self?.isPhoneReachable = session.isReachable
+        }
+    }
+
+    func sessionReachabilityDidChange(_ session: WCSession) {
+        Task { @MainActor [weak self] in
+            self?.isPhoneReachable = session.isReachable
         }
     }
 

@@ -55,9 +55,11 @@ final class WatchWorkoutManager: NSObject, ObservableObject {
     }
 
     var elapsedText: String {
-        let minutes = Int(elapsedSeconds) / 60
-        let seconds = Int(elapsedSeconds) % 60
-        return String(format: "%02d:%02d", minutes, seconds)
+        let total = Int(elapsedSeconds)
+        if total >= 3_600 {
+            return String(format: "%d:%02d:%02d", total / 3_600, (total % 3_600) / 60, total % 60)
+        }
+        return String(format: "%02d:%02d", total / 60, total % 60)
     }
 
     var distanceText: String {
@@ -72,6 +74,26 @@ final class WatchWorkoutManager: NSObject, ObservableObject {
         String(format: "%.1f", speedMetersPerSecond * 3.6)
     }
 
+    var activeEnergyText: String {
+        activeEnergyKilocalories > 0 ? String(Int(activeEnergyKilocalories.rounded())) : "--"
+    }
+
+    var cadenceText: String {
+        cadenceRPM > 0 ? String(Int(cadenceRPM.rounded())) : "--"
+    }
+
+    var powerText: String {
+        cyclingPowerWatts > 0 ? String(Int(cyclingPowerWatts.rounded())) : "--"
+    }
+
+    var elevationGainText: String {
+        String(Int(elevationGainMeters.rounded()))
+    }
+
+    func dismissError() {
+        errorMessage = nil
+    }
+
     func requestAuthorization() async {
         guard HKHealthStore.isHealthDataAvailable() else { return }
 
@@ -81,16 +103,22 @@ final class WatchWorkoutManager: NSObject, ObservableObject {
             routeType
         ]
 
-        let typesToRead: Set<HKObjectType> = [
-            HKQuantityType.quantityType(forIdentifier: .heartRate)!,
-            HKQuantityType.quantityType(forIdentifier: .distanceCycling)!,
-            HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned)!,
-            HKQuantityType.quantityType(forIdentifier: .basalEnergyBurned)!,
-            HKQuantityType.quantityType(forIdentifier: .cyclingSpeed)!,
-            HKQuantityType.quantityType(forIdentifier: .cyclingCadence)!,
-            HKQuantityType.quantityType(forIdentifier: .cyclingPower)!,
+        var typesToRead: Set<HKObjectType> = [
+            HKObjectType.workoutType(),
             routeType
         ]
+        let quantityIdentifiers: [HKQuantityTypeIdentifier] = [
+            .heartRate,
+            .distanceCycling,
+            .activeEnergyBurned,
+            .basalEnergyBurned,
+            .cyclingSpeed,
+            .cyclingCadence,
+            .cyclingPower
+        ]
+        typesToRead.formUnion(
+            quantityIdentifiers.compactMap(HKQuantityType.quantityType(forIdentifier:))
+        )
 
         do {
             try await healthStore.requestAuthorization(toShare: typesToShare, read: typesToRead)

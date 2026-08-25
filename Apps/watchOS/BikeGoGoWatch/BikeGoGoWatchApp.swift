@@ -42,7 +42,7 @@ struct BikeGoGoWatchApp: App {
                         workoutManager.startWorkout(configuration: configuration)
                     }
 
-                    bridge.onRideStateReceived = { state in
+                    let applyRideState: (String) -> Void = { state in
                         switch state {
                         case "recording" where !workoutManager.hasStarted:
                             workoutManager.startWorkout()
@@ -56,6 +56,9 @@ struct BikeGoGoWatchApp: App {
                             break
                         }
                     }
+                    bridge.onRideStateReceived = applyRideState
+                    applyRideState(bridge.remoteRideState)
+
                     workoutManager.onMetricsChanged = {
                         elapsed,
                         distance,

@@ -385,12 +385,9 @@ struct RideDetailView: View {
                 }
             }
 
-            if let sourceURL = appState.weatherAttributionURL {
-                Link(destination: sourceURL) {
-                    Label("Apple 天气", systemImage: "info.circle")
-                        .font(.caption)
-                }
-            }
+            AppleWeatherAttributionLink(
+                legalPageURL: appState.weatherAttributionURL
+            )
         }
         .padding(16)
         .background(

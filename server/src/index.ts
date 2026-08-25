@@ -40,6 +40,7 @@ const envSchema = z.object({
   SESSION_TTL_DAYS: z.coerce.number().int().min(1).max(365).default(30),
   TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(10).default(1),
   APP_REVISION: z.string().min(1).default("development"),
+  ANALYTICS_HMAC_SECRET: z.string().min(32).optional(),
   APNS_KEY_ID: z.string().min(1).optional(),
   APNS_TEAM_ID: z.string().min(1).optional(),
   APNS_TOPIC: z.string().min(1).optional(),
@@ -127,7 +128,8 @@ const app = await createApp({
   trustProxy: env.TRUST_PROXY_HOPS === 0 ? false : env.TRUST_PROXY_HOPS,
   revision: env.APP_REVISION,
   appleTokenClient,
-  notificationSenders
+  notificationSenders,
+  analyticsHmacSecret: env.ANALYTICS_HMAC_SECRET
 });
 
 await app.listen({ port: env.PORT, host: "0.0.0.0" });

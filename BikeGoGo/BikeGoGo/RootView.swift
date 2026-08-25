@@ -10,6 +10,31 @@ enum BikeGoGoStyle {
     static let cornerRadius: CGFloat = 8
 }
 
+struct AppleWeatherAttributionLink: View {
+    private static let fallbackLegalPageURL = URL(
+        string: "https://weatherkit.apple.com/legal-attribution.html"
+    )!
+
+    let legalPageURL: URL?
+    var showsLegalLabel = true
+
+    var body: some View {
+        Link(destination: legalPageURL ?? Self.fallbackLegalPageURL) {
+            HStack(spacing: 5) {
+                Text(" Weather")
+                    .fontWeight(.semibold)
+                if showsLegalLabel {
+                    Text("数据来源与法律声明")
+                }
+                Image(systemName: "arrow.up.right.square")
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        .accessibilityLabel("Apple Weather 数据来源与法律声明")
+    }
+}
+
 private enum AppTab: Hashable {
     case ride
     case team

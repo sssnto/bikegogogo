@@ -27,6 +27,7 @@ import {
   type UserRecord,
   type VoiceInvitationRecord
 } from "./data-store.js";
+import { AnalyticsStore } from "./analytics-store.js";
 import {
   LiveLocationStore,
   MeetingPointStore,
@@ -48,6 +49,7 @@ export type AppConfig = {
   appleIdentityVerifier?: AppleIdentityVerifier;
   appleTokenClient?: AppleTokenClient;
   notificationSenders?: NotificationSender[];
+  analyticsHmacSecret?: string;
 };
 
 const publicUser = (user: UserRecord) => ({
@@ -147,18 +149,36 @@ export async function createApp(config: AppConfig) {
     config.sessionTTLDays * 24 * 60 * 60 * 1000,
     config.databaseUrl
   );
+  const analytics = new AnalyticsStore(config.databaseUrl, config.analyticsHmacSecret);
   const verifyAppleIdentity = config.appleIdentityVerifier
     ?? createAppleIdentityVerifier(config.appleBundleId);
   const notificationSenders = config.notificationSenders ?? [];
   const liveLocations = new LiveLocationStore();
   const meetingPoints = new MeetingPointStore();
   await store.initialize();
+  await analytics.initialize();
   app.log.info({ storage: store.storageBackend }, "Data store initialized");
   app.addHook("onRequest", async (request, reply) => {
     reply.header("x-request-id", request.id);
+    (request as FastifyRequest & { analyticsStartedAt?: number }).analyticsStartedAt = performance.now();
+  });
+  app.addHook("onResponse", async (request, reply) => {
+    const startedAt = (request as FastifyRequest & { analyticsStartedAt?: number }).analyticsStartedAt;
+    void analytics.record({
+      eventName: "api.request_completed",
+      occurredAt: new Date().toISOString(),
+      platform: "server",
+      properties: {
+        method: request.method,
+        route: request.routeOptions.url ?? "unknown",
+        statusCode: reply.statusCode,
+        durationMilliseconds: startedAt ? Math.round(performance.now() - startedAt) : 0
+      }
+    }).catch((error) => request.log.warn({ err: error }, "Analytics event write failed"));
   });
   app.addHook("onClose", async () => {
     await store.close();
+    await analytics.close();
   });
 
   await app.register(cors, {
@@ -203,6 +223,20 @@ export async function createApp(config: AppConfig) {
       try {
         const result = await sender.send(tokens, notification);
         await store.removePushTokens(result.invalidTokens, sender.environment);
+        await analytics.record({
+          eventName: result.failedCount > 0
+            ? "push.send_rejected"
+            : "push.send_accepted",
+          occurredAt: new Date().toISOString(),
+          platform: "server",
+          properties: {
+            environment: sender.environment,
+            event: notification.event,
+            submittedCount: tokens.length,
+            failedCount: result.failedCount,
+            invalidCount: result.invalidTokens.length
+          }
+        }, userId);
         if (result.failedCount > 0) {
           app.log.warn(
             {
@@ -214,6 +248,19 @@ export async function createApp(config: AppConfig) {
           );
         }
       } catch (error) {
+        await analytics.record({
+          eventName: "push.send_failed",
+          occurredAt: new Date().toISOString(),
+          platform: "server",
+          properties: {
+            environment: sender.environment,
+            event: notification.event,
+            submittedCount: tokens.length
+          }
+        }, userId).catch((analyticsError) => app.log.warn(
+          { err: analyticsError },
+          "Push failure analytics write failed"
+        ));
         app.log.error(
           {
             err: error,
@@ -244,6 +291,34 @@ export async function createApp(config: AppConfig) {
         revision: config.revision ?? "development"
       });
     }
+  });
+
+  const analyticsPropertySchema = z.union([
+    z.string().max(200),
+    z.number().finite(),
+    z.boolean(),
+    z.null()
+  ]);
+  const analyticsEventSchema = z.object({
+    eventId: z.string().uuid(),
+    eventName: z.string().regex(/^[a-z][a-z0-9_.]{2,80}$/),
+    occurredAt: z.string().datetime(),
+    sessionId: z.string().uuid().optional(),
+    appVersion: z.string().max(30).optional(),
+    buildNumber: z.string().max(30).optional(),
+    platform: z.enum(["iOS", "watchOS"]),
+    osVersion: z.string().max(30).optional(),
+    deviceFamily: z.string().max(40).optional(),
+    properties: z.record(z.string().max(50), analyticsPropertySchema).default({})
+  });
+  const analyticsBatchSchema = z.object({
+    events: z.array(analyticsEventSchema).min(1).max(100)
+  });
+  app.post("/v1/telemetry/events", async (request, reply) => {
+    const currentUser = authenticatedUser(request);
+    const body = analyticsBatchSchema.parse(request.body);
+    await analytics.recordBatch(body.events, currentUser.id);
+    return reply.status(202).send({ accepted: body.events.length });
   });
 
   const guestAuthSchema = z.object({

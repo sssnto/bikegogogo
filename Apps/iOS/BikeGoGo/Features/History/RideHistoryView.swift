@@ -66,6 +66,15 @@ struct RideHistoryView: View {
 
             syncStatus
 
+            if appState.recentRides.contains(where: { $0.weather != nil }) {
+                Section {
+                    AppleWeatherAttributionLink(
+                        legalPageURL: appState.weatherAttributionURL
+                    )
+                    .listRowBackground(Color.clear)
+                }
+            }
+
             Section("骑行记录") {
                 ForEach(appState.recentRides) { ride in
                     NavigationLink {

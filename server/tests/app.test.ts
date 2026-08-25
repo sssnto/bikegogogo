@@ -54,6 +54,48 @@ test("health responses expose a request ID and build revision", async () => {
   }
 });
 
+test("authenticated clients can submit a bounded telemetry batch", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "bikegogogo-test-"));
+  const dataFile = path.join(directory, "data.json");
+  const app = await createApp(configFor(dataFile));
+
+  try {
+    const session = (await app.inject({
+      method: "POST",
+      url: "/v1/auth/guest",
+      payload: { deviceId: "telemetry-device-id", displayName: "Telemetry Rider" }
+    })).json();
+    const unauthorized = await app.inject({
+      method: "POST",
+      url: "/v1/telemetry/events",
+      payload: { events: [] }
+    });
+    assert.equal(unauthorized.statusCode, 401);
+
+    const accepted = await app.inject({
+      method: "POST",
+      url: "/v1/telemetry/events",
+      headers: { authorization: `Bearer ${session.accessToken}` },
+      payload: {
+        events: [{
+          eventId: "7b9a8b28-f924-4704-a6e2-3729ebdd95d1",
+          eventName: "ride.sync_succeeded",
+          occurredAt: "2026-08-25T12:00:00.000Z",
+          platform: "iOS",
+          appVersion: "1.0",
+          buildNumber: "33",
+          properties: { source: "appleWatch", retryCount: 0 }
+        }]
+      }
+    });
+    assert.equal(accepted.statusCode, 202);
+    assert.equal(accepted.json().accepted, 1);
+  } finally {
+    await app.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("rate limits distinguish clients behind one trusted proxy", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "bikegogogo-test-"));
   const dataFile = path.join(directory, "data.json");

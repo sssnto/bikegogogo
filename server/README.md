@@ -11,6 +11,7 @@
 - 骑行记录、指标和轨迹点同步。
 - PostgreSQL 16 主存储及旧 JSON 自动迁移、镜像备份。
 - APNs Sandbox/Production 双通道，按 App 构建环境隔离 device token。
+- 认证批量运营事件接收及运营后台统计数据源。
 
 ## 本地启动
 
@@ -97,7 +98,12 @@ GET /v1/rides
 GET /v1/rides/:rideId
 PUT /v1/rides/:rideId
 DELETE /v1/rides/:rideId
+POST /v1/telemetry/events
 ```
+
+`POST /v1/telemetry/events` 使用现有账户的 Bearer token 鉴权，单批最多接收
+100 条事件并按 `eventId` 去重。`ANALYTICS_HMAC_SECRET` 只用于把业务用户 ID
+转换成不可逆运营标识，不会下发给客户端。
 
 注意：LiveKit API Secret 只能放在后端，不能放进 iOS App。
 

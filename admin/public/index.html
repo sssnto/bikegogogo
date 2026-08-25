@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>BikeGoGo 运营后台</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div id="login" class="login-shell">
+    <form id="login-form" class="login-panel">
+      <div class="brand-mark" aria-hidden="true">B</div>
+      <h1>BikeGoGo 运营后台</h1>
+      <p class="muted">仅限授权运营人员访问</p>
+      <label>管理员账号<input id="username" autocomplete="username" required></label>
+      <label>密码<input id="password" type="password" autocomplete="current-password" minlength="12" required></label>
+      <label id="totp-row" hidden>六位验证码<input id="totp" inputmode="numeric" autocomplete="one-time-code" maxlength="6"></label>
+      <button id="login-submit" class="primary" type="submit">继续</button>
+      <p id="login-error" class="error" role="alert"></p>
+    </form>
+  </div>
+
+  <div id="workspace" class="workspace" hidden>
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-mark">B</span><strong>BikeGoGo</strong></div>
+      <nav aria-label="后台导航">
+        <button class="nav-item active" data-view="overview">总览</button>
+        <button class="nav-item" data-view="rides">骑行运营</button>
+        <button class="nav-item" data-view="social">好友与小队</button>
+        <button class="nav-item" data-view="quality">应用质量</button>
+        <button class="nav-item" data-view="users">用户支持</button>
+        <button class="nav-item admin-only" data-view="audit">审计日志</button>
+      </nav>
+      <div class="sidebar-footer">
+        <span id="admin-name"></span>
+        <button id="logout" class="icon-button" title="退出登录" aria-label="退出登录">↪</button>
+      </div>
+    </aside>
+
+    <main>
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">OPERATIONS</p>
+          <h1 id="page-title">运营总览</h1>
+        </div>
+        <div class="toolbar">
+          <label class="period-control">统计周期
+            <select id="days">
+              <option value="1">今天</option>
+              <option value="7" selected>近 7 天</option>
+              <option value="30">近 30 天</option>
+              <option value="90">近 90 天</option>
+            </select>
+          </label>
+          <button id="refresh" class="icon-button" title="刷新数据" aria-label="刷新数据">↻</button>
+        </div>
+      </header>
+
+      <div id="status" class="status-line" aria-live="polite"></div>
+      <section id="content" class="content" aria-live="polite"></section>
+    </main>
+  </div>
+  <script src="/app.js" defer></script>
+</body>
+</html>
