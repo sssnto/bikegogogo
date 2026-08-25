@@ -280,7 +280,7 @@ struct RideShareDataOverlay: View {
                     )
                 }
                 Spacer(minLength: width * 0.01)
-                Text("Apple Weather")
+                Text(" Weather · weatherkit.apple.com/legal-attribution.html")
                     .foregroundStyle(.white.opacity(0.65))
             }
             .font(.system(size: width * 0.03, weight: .semibold))

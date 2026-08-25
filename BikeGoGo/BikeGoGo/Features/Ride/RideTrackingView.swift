@@ -612,13 +612,9 @@ struct RideTrackingView: View {
             .minimumScaleFactor(0.75)
             .foregroundStyle(.primary)
 
-            if let sourceURL = appState.weatherAttributionURL {
-                Link(destination: sourceURL) {
-                    Text("Apple 天气")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-            }
+            AppleWeatherAttributionLink(
+                legalPageURL: appState.weatherAttributionURL
+            )
         } else if appState.isRefreshingWeather {
             HStack(spacing: 6) {
                 ProgressView()

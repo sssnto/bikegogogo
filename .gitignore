@@ -1,11 +1,13 @@
 .DS_Store
 .env
 server/.env
+admin/.env
 *.p8
 deploy/nas/secrets/
 .build/
 node_modules/
 server/dist/
+admin/dist/
 DerivedData/
 xcuserdata/
 *.xcuserstate

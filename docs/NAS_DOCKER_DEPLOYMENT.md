@@ -156,6 +156,10 @@ deploy/nas/docker-compose.yml
 deploy/nas/.env.example
 ```
 
+当前 Compose 同时部署业务 API、隐私政策、运营管理后台和 PostgreSQL。运营后台的
+首次初始化、双因素认证及反向代理配置见
+[运营管理后台部署](ADMIN_DEPLOYMENT.md)。
+
 把 `deploy/nas` 目录复制到 NAS 后：
 
 ```bash
@@ -356,11 +360,12 @@ docker compose cp bikegogogo-server:/data/bikegogogo.json \
 
 ## 对外暴露的服务
 
-需要由 NAS 向反向代理提供两个内网 HTTP 服务：
+需要由 NAS 向反向代理提供三个内网 HTTP 服务：
 
 ```text
 BikeGoGo API：容器 8080/tcp，NAS 默认映射 8080/tcp
 隐私政策：容器 80/tcp，NAS 默认映射 8081/tcp
+运营后台：容器 8082/tcp，NAS 默认映射 8082/tcp
 公网访问：只通过反向代理提供 HTTPS
 ```
 
@@ -383,6 +388,10 @@ https://bikegogogo-server.sssnto.cn:8443
 - PostgreSQL。
 - 未来的 Redis。
 - LiveKit API Secret。
+
+BikeGoGo 运营后台可以通过独立域名经 HTTPS 反向代理开放给管理员，但不要直接暴露
+NAS 的 `8082` 端口。后台自带密码、TOTP 双因素认证、会话超时、CSRF 防护和审计日志，
+仍建议在 Nginx Proxy Manager 上增加来源 IP 白名单或 VPN 限制。
 
 LiveKit Cloud 本身不需要你在 NAS 上暴露端口。客户端会拿到后端签发的 token，再连接 `wss://bikegogo-qy7s1sfz.livekit.cloud`。
 
@@ -599,7 +608,7 @@ Authorization: Bearer <accessToken>
 
 ## 公网安全边界
 
-- 公网只开放反向代理的 HTTPS 端口；容器的 `8080` 只在 NAS 内网使用。
+- 公网只开放反向代理的 HTTPS 端口；容器的 `8080`、`8081`、`8082` 只在 NAS 内网使用。
 - HTTPS/TLS 加密客户端到 NAS 的请求，包括 Bearer token 和业务数据。
 - 服务端仅保存访问令牌、设备 ID 的 SHA-256 摘要；iOS 原始令牌存入 Keychain。
 - LiveKit API Secret 只留在 NAS，iOS 获得的是 2 小时有效的房间 JWT。
@@ -629,3 +638,11 @@ Authorization: Bearer <accessToken>
 https://bikegogogo-server.sssnto.cn:8443/health -> http://127.0.0.1:8080/health
 https://bikegogogo-server.sssnto.cn:8443/v1/*  -> http://127.0.0.1:8080/v1/*
 ```
+
+运营后台应使用不同域名，例如：
+
+```text
+https://bikegogogo-admin.sssnto.cn/* -> http://127.0.0.1:8082/*
+```
+
+后台域名必须启用 HTTPS，不要与客户端 API 共用路径或 Cookie 域。

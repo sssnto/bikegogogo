@@ -8,6 +8,7 @@ on:
       - "v*"
     paths:
       - "server/**"
+      - "admin/**"
       - "docs/PRIVACY_POLICY.md"
       - "docs/SUPPORT.md"
       - "deploy/privacy/**"
@@ -20,6 +21,7 @@ permissions:
 
 env:
   SERVER_IMAGE_NAME: bikegogogo-server
+  ADMIN_IMAGE_NAME: bikegogogo-admin
   PRIVACY_IMAGE_NAME: bikegogogo-privacy
 
 jobs:
@@ -69,10 +71,58 @@ jobs:
       - name: Build
         run: npm run build
 
+  verify-admin:
+    name: Verify admin
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: bikegogogo_admin_test
+          POSTGRES_USER: bikegogogo
+          POSTGRES_PASSWORD: integration-test-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U bikegogogo -d bikegogogo_admin_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql://bikegogogo:integration-test-password@127.0.0.1:5432/bikegogogo_admin_test
+    defaults:
+      run:
+        working-directory: admin
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: admin/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
   build-and-push:
     name: Build and push production images
     runs-on: ubuntu-latest
-    needs: verify
+    needs:
+      - verify
+      - verify-admin
 
     steps:
       - name: Checkout
@@ -84,6 +134,7 @@ jobs:
         run: |
           owner="${GITHUB_REPOSITORY_OWNER,,}"
           echo "server=ghcr.io/${owner}/${SERVER_IMAGE_NAME}" >> "$GITHUB_OUTPUT"
+          echo "admin=ghcr.io/${owner}/${ADMIN_IMAGE_NAME}" >> "$GITHUB_OUTPUT"
           echo "privacy=ghcr.io/${owner}/${PRIVACY_IMAGE_NAME}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
@@ -120,6 +171,31 @@ jobs:
           labels: ${{ steps.server_meta.outputs.labels }}
           cache-from: type=gha,scope=server
           cache-to: type=gha,mode=max,scope=server
+
+      - name: Extract admin Docker metadata
+        id: admin_meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.image.outputs.admin }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=tag
+            type=sha,prefix=sha-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push admin
+        uses: docker/build-push-action@v6
+        with:
+          context: ./admin
+          file: ./admin/Dockerfile
+          push: true
+          platforms: linux/amd64,linux/arm64
+          build-args: |
+            APP_REVISION=${{ github.sha }}
+          tags: ${{ steps.admin_meta.outputs.tags }}
+          labels: ${{ steps.admin_meta.outputs.labels }}
+          cache-from: type=gha,scope=admin
+          cache-to: type=gha,mode=max,scope=admin
 
       - name: Extract privacy Docker metadata
         id: privacy_meta
