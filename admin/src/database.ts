@@ -2,7 +2,14 @@ import { randomUUID } from "node:crypto";
 import { Pool } from "pg";
 
 import { decryptSecret, encryptSecret, sha256 } from "./security.js";
-import type { AdminRole, BusinessSnapshot, BusinessState } from "./types.js";
+import type {
+  AdminRole,
+  AnalyticsEventRecord,
+  AnalyticsEventSnapshot,
+  AnalyticsFreshness,
+  BusinessSnapshot,
+  BusinessState
+} from "./types.js";
 
 type AdminCredentials = {
   id: string;
@@ -439,6 +446,98 @@ export class AdminDatabase {
       errors,
       p95Milliseconds: p95Values.length ? Math.max(...p95Values) : undefined,
       events: result.rows.map((row) => ({ name: row.event_name, count: Number(row.count) }))
+    };
+  }
+
+  async analyticsEvents(from: Date, to: Date, limit = 100_000): Promise<AnalyticsEventSnapshot> {
+    const safeLimit = Math.min(200_000, Math.max(1_000, Math.floor(limit)));
+    const result = await this.pool.query<{
+      event_name: string;
+      occurred_at: Date;
+      received_at: Date;
+      user_key: string | null;
+      session_id: string | null;
+      app_version: string | null;
+      build_number: string | null;
+      platform: string;
+      os_version: string | null;
+      device_family: string | null;
+      properties: Record<string, unknown>;
+      first_seen_at: Date | null;
+      total_count: string;
+    }>(
+      `WITH first_seen AS (
+         SELECT user_key, MIN(occurred_at) AS first_seen_at
+           FROM analytics_events
+          WHERE user_key IS NOT NULL AND platform IN ('iOS', 'watchOS')
+          GROUP BY user_key
+       )
+       SELECT e.event_name, e.occurred_at, e.received_at, e.user_key,
+              e.session_id, e.app_version, e.build_number, e.platform,
+              e.os_version, e.device_family, e.properties, f.first_seen_at,
+              COUNT(*) OVER()::text AS total_count
+         FROM analytics_events e
+         LEFT JOIN first_seen f ON f.user_key = e.user_key
+        WHERE e.occurred_at >= $1 AND e.occurred_at < $2
+          AND e.event_name <> 'api.request_completed'
+        ORDER BY e.occurred_at ASC
+        LIMIT $3`,
+      [from, to, safeLimit + 1]
+    );
+    const total = Number(result.rows[0]?.total_count ?? 0);
+    const rows = result.rows.slice(0, safeLimit);
+    const events: AnalyticsEventRecord[] = rows.map((row) => ({
+      eventName: row.event_name,
+      occurredAt: row.occurred_at.toISOString(),
+      receivedAt: row.received_at.toISOString(),
+      userKey: row.user_key ?? undefined,
+      sessionId: row.session_id ?? undefined,
+      appVersion: row.app_version ?? undefined,
+      buildNumber: row.build_number ?? undefined,
+      platform: row.platform,
+      osVersion: row.os_version ?? undefined,
+      deviceFamily: row.device_family ?? undefined,
+      properties: row.properties ?? {},
+      firstSeenAt: row.first_seen_at?.toISOString()
+    }));
+    return {
+      events,
+      total,
+      truncated: total > safeLimit,
+      latestReceivedAt: events.length
+        ? events.reduce((latest, event) => event.receivedAt > latest ? event.receivedAt : latest, events[0].receivedAt)
+        : undefined
+    };
+  }
+
+  async analyticsFreshness(): Promise<AnalyticsFreshness> {
+    const result = await this.pool.query<{
+      latest_received_at: Date | null;
+      latest_client_at: Date | null;
+      latest_server_at: Date | null;
+      latest_push_at: Date | null;
+      latest_livekit_at: Date | null;
+      total_events: string;
+      client_events: string;
+    }>(
+      `SELECT MAX(received_at) AS latest_received_at,
+              MAX(received_at) FILTER (WHERE platform IN ('iOS', 'watchOS')) AS latest_client_at,
+              MAX(received_at) FILTER (WHERE platform = 'server') AS latest_server_at,
+              MAX(received_at) FILTER (WHERE event_name LIKE 'push.%') AS latest_push_at,
+              MAX(received_at) FILTER (WHERE event_name LIKE 'livekit.%') AS latest_livekit_at,
+              COUNT(*)::text AS total_events,
+              COUNT(*) FILTER (WHERE platform IN ('iOS', 'watchOS'))::text AS client_events
+         FROM analytics_events`
+    );
+    const row = result.rows[0];
+    return {
+      latestReceivedAt: row?.latest_received_at?.toISOString(),
+      latestClientAt: row?.latest_client_at?.toISOString(),
+      latestServerAt: row?.latest_server_at?.toISOString(),
+      latestPushAt: row?.latest_push_at?.toISOString(),
+      latestLiveKitAt: row?.latest_livekit_at?.toISOString(),
+      totalEvents: Number(row?.total_events ?? 0),
+      clientEvents: Number(row?.client_events ?? 0)
     };
   }
 

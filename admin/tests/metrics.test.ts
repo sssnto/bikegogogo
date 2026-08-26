@@ -1,8 +1,19 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { overviewMetrics, periodForDays, rideMetrics, socialMetrics } from "../src/metrics.js";
-import type { BusinessSnapshot } from "../src/types.js";
+import {
+  dataFreshnessMetrics,
+  growthMetrics,
+  overviewMetrics,
+  periodForDays,
+  pushDeliveryMetrics,
+  retentionMetrics,
+  rideMetrics,
+  socialMetrics,
+  versionMetrics,
+  voiceQualityMetrics
+} from "../src/metrics.js";
+import type { AnalyticsEventRecord, BusinessSnapshot } from "../src/types.js";
 
 const now = new Date("2026-08-25T12:00:00.000Z");
 const snapshot: BusinessSnapshot = {
@@ -61,4 +72,86 @@ test("ride and social summaries preserve product metric definitions", () => {
   assert.equal(social.groups.averageMembers, 2);
   assert.equal(social.voice.responsePercent, 100);
   assert.equal(social.push.production, 1);
+});
+
+const analyticsEvents: AnalyticsEventRecord[] = [
+  {
+    eventName: "app.opened", occurredAt: "2026-08-18T08:00:00.000Z",
+    receivedAt: "2026-08-18T08:00:01.000Z", userKey: "anonymous-1",
+    firstSeenAt: "2026-08-18T08:00:00.000Z", platform: "iOS",
+    appVersion: "1.0", buildNumber: "33", osVersion: "26.6", deviceFamily: "iPhone",
+    properties: {}
+  },
+  {
+    eventName: "app.opened", occurredAt: "2026-08-19T08:00:00.000Z",
+    receivedAt: "2026-08-19T08:00:01.000Z", userKey: "anonymous-1",
+    firstSeenAt: "2026-08-18T08:00:00.000Z", platform: "iOS",
+    appVersion: "1.0", buildNumber: "33", osVersion: "26.6", deviceFamily: "iPhone",
+    properties: {}
+  },
+  {
+    eventName: "app.opened", occurredAt: "2026-08-25T08:00:00.000Z",
+    receivedAt: "2026-08-25T08:00:01.000Z", userKey: "anonymous-1",
+    firstSeenAt: "2026-08-18T08:00:00.000Z", platform: "iOS",
+    appVersion: "1.0", buildNumber: "33", osVersion: "26.6", deviceFamily: "iPhone",
+    properties: {}
+  },
+  {
+    eventName: "ride.started", occurredAt: "2026-08-25T09:00:00.000Z",
+    receivedAt: "2026-08-25T09:00:01.000Z", userKey: "anonymous-1",
+    firstSeenAt: "2026-08-18T08:00:00.000Z", platform: "iOS",
+    appVersion: "1.0", buildNumber: "33", properties: {}
+  },
+  {
+    eventName: "voice.room_connected", occurredAt: "2026-08-25T10:00:00.000Z",
+    receivedAt: "2026-08-25T10:00:01.000Z", userKey: "anonymous-1",
+    firstSeenAt: "2026-08-18T08:00:00.000Z", platform: "iOS",
+    appVersion: "1.0", buildNumber: "33", properties: {}
+  },
+  {
+    eventName: "voice.room_disconnected", occurredAt: "2026-08-25T10:30:00.000Z",
+    receivedAt: "2026-08-25T10:30:01.000Z", userKey: "anonymous-1",
+    firstSeenAt: "2026-08-18T08:00:00.000Z", platform: "iOS",
+    appVersion: "1.0", buildNumber: "33", properties: { durationSeconds: 1_800 }
+  },
+  {
+    eventName: "push.send_accepted", occurredAt: "2026-08-25T10:40:00.000Z",
+    receivedAt: "2026-08-25T10:40:01.000Z", platform: "server",
+    properties: { event: "voice_invitation", submittedCount: 3, failedCount: 1, invalidCount: 1 }
+  }
+];
+
+test("stage B metrics distinguish product state from client delivery events", () => {
+  const period = periodForDays(10, now);
+  const growth = growthMetrics(snapshot.state, analyticsEvents, period);
+  const retention = retentionMetrics(analyticsEvents, period);
+  const voice = voiceQualityMetrics(snapshot.state, analyticsEvents, period);
+  const push = pushDeliveryMetrics(snapshot.state, analyticsEvents, period);
+  const versions = versionMetrics(analyticsEvents, period);
+
+  assert.equal(growth.tracking.available, true);
+  assert.equal(growth.funnel.find((step) => step.label === "开始骑行")?.users, 1);
+  assert.equal(retention.retention.find((item) => item.days === 1)?.percent, 100);
+  assert.equal(retention.retention.find((item) => item.days === 7)?.percent, 100);
+  assert.equal(voice.trueConnectionAvailable, true);
+  assert.equal(voice.averageDurationMinutes, 30);
+  assert.equal(push.delivery.submitted, 3);
+  assert.equal(push.delivery.accepted, 2);
+  assert.equal(versions.versions[0].buildNumber, "33");
+});
+
+test("freshness reports missing integrations separately from stale data", () => {
+  const freshness = dataFreshnessMetrics(
+    "2026-08-25T11:55:00.000Z",
+    {
+      latestReceivedAt: "2026-08-25T11:58:00.000Z",
+      latestServerAt: "2026-08-25T11:58:00.000Z",
+      totalEvents: 20,
+      clientEvents: 0
+    },
+    now
+  );
+  assert.equal(freshness.sources.find((source) => source.name === "业务数据库")?.state, "fresh");
+  assert.equal(freshness.sources.find((source) => source.name === "LiveKit webhook")?.state, "missing");
+  assert.equal(freshness.sources.find((source) => source.name === "App Store Connect")?.state, "missing");
 });

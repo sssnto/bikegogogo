@@ -167,6 +167,15 @@ final class AppState: ObservableObject {
                     await PushNotificationManager.shared.configure(
                         accessToken: accessToken
                     )
+                    await TelemetryClient.shared.configure(
+                        accessToken: accessToken,
+                        baseURL: AppConfiguration.apiBaseURL
+                    )
+                    if accessToken != nil {
+                        await TelemetryClient.shared.track(
+                            "account.session_established"
+                        )
+                    }
                 }
             }
             .store(in: &cancellables)
@@ -232,6 +241,7 @@ final class AppState: ObservableObject {
     }
 
     func bootstrap() async {
+        await TelemetryClient.shared.track("app.opened")
         rideRecorder.onPointsChanged = { [weak self] points in
             Task { @MainActor in
                 guard let self else { return }
@@ -389,6 +399,10 @@ final class AppState: ObservableObject {
         rideRecorder.requestCurrentLocation()
         watchBridge.sendRideState(.recording)
         Task {
+            await TelemetryClient.shared.track("ride.started", properties: [
+                "source": currentRide.source.rawValue,
+                "watchAvailable": watchBridge.isWatchAppInstalled ? "true" : "false"
+            ])
             do {
                 try await healthKitRideImporter.requestAuthorization()
             } catch {
@@ -415,12 +429,16 @@ final class AppState: ObservableObject {
         rideRecorder.pause(keepingMotionUpdates: automatically)
         watchBridge.sendRideState(.paused)
         Task {
+            await TelemetryClient.shared.track("ride.paused", properties: [
+                "automatic": automatically ? "true" : "false"
+            ])
             await persistActiveRide()
         }
     }
 
     func resumeRide() {
         guard currentRide.state == .paused else { return }
+        let wasAutomaticallyPaused = isAutomaticallyPaused
         activeSegmentStartedAt = Date()
         currentRide.state = .recording
         isAutomaticallyPaused = false
@@ -434,6 +452,9 @@ final class AppState: ObservableObject {
         }
         watchBridge.sendRideState(.recording)
         Task {
+            await TelemetryClient.shared.track("ride.resumed", properties: [
+                "afterAutomaticPause": wasAutomaticallyPaused ? "true" : "false"
+            ])
             await persistActiveRide()
         }
     }
@@ -456,6 +477,11 @@ final class AppState: ObservableObject {
         if !currentRide.points.isEmpty {
             recentRides.insert(currentRide, at: 0)
             Task {
+                await TelemetryClient.shared.track("ride.finished", properties: [
+                    "source": currentRide.source.rawValue,
+                    "hasRoute": currentRide.points.isEmpty ? "false" : "true",
+                    "hasWeather": currentRide.weather == nil ? "false" : "true"
+                ])
                 await saveRecentRides()
                 await syncRides()
             }
@@ -609,6 +635,14 @@ final class AppState: ObservableObject {
             accessToken: accountClient.accessToken
         )
         voiceRoom.isJoined = voiceClient.isConnected
+        await TelemetryClient.shared.track(
+            voiceClient.isConnected
+                ? "voice.room_connected"
+                : "voice.room_connect_failed",
+            properties: [
+                "targetKind": roomID.hasPrefix("grp_") ? "group" : "friend"
+            ]
+        )
     }
 
     var voiceCallPhase: VoiceCallPhase {
@@ -678,6 +712,9 @@ final class AppState: ObservableObject {
         defer { isHandlingVoiceInvitation = false }
 
         do {
+            await TelemetryClient.shared.track("voice.call_requested", properties: [
+                "targetKind": targetID.hasPrefix("grp_") ? "group" : "friend"
+            ])
             let invitation = try await voiceTokenService.createInvitation(
                 targetID: targetID,
                 accessToken: accessToken
@@ -695,6 +732,9 @@ final class AppState: ObservableObject {
                 activeVoiceCallContext = nil
             }
         } catch {
+            await TelemetryClient.shared.track("voice.call_failed", properties: [
+                "stage": "invitation"
+            ])
             activeVoiceCallContext = nil
             voiceCallMessage = "发起语音失败：\(error.localizedDescription)"
         }
@@ -721,6 +761,10 @@ final class AppState: ObservableObject {
         defer { isHandlingVoiceInvitation = false }
 
         do {
+            await TelemetryClient.shared.track("voice.invitation_response", properties: [
+                "action": "accept",
+                "targetKind": invitation.isGroupCall ? "group" : "friend"
+            ])
             _ = try await voiceTokenService.respond(
                 invitationID: invitation.id,
                 action: "accept",
@@ -753,6 +797,10 @@ final class AppState: ObservableObject {
         isHandlingVoiceInvitation = true
         defer { isHandlingVoiceInvitation = false }
         do {
+            await TelemetryClient.shared.track("voice.invitation_response", properties: [
+                "action": "decline",
+                "targetKind": invitation.isGroupCall ? "group" : "friend"
+            ])
             _ = try await voiceTokenService.respond(
                 invitationID: invitation.id,
                 action: "decline",
@@ -770,8 +818,14 @@ final class AppState: ObservableObject {
     }
 
     func leaveVoiceRoom() async {
+        let wasConnected = voiceClient.isConnected
         await cancelOutgoingVoiceInvitation()
         await voiceClient.leave()
+        if wasConnected {
+            await TelemetryClient.shared.track("voice.room_disconnected", properties: [
+                "reason": "user_left"
+            ])
+        }
         activeVoiceInvitationID = nil
         activeVoiceCallContext = nil
         voiceRoom.isJoined = false
@@ -1235,6 +1289,7 @@ final class AppState: ObservableObject {
         isSyncingRides = true
         rideSyncMessage = nil
         defer { isSyncingRides = false }
+        await TelemetryClient.shared.track("ride.cloud_sync_started")
 
         do {
             let result = try await rideCloudClient.synchronize(
@@ -1249,14 +1304,26 @@ final class AppState: ObservableObject {
                     .map(\.rideID)
             )
             if let firstFailure = result.failures.first {
+                await TelemetryClient.shared.track("ride.cloud_sync_failed", properties: [
+                    "failureKind": firstFailure.isIncompatibleRecord
+                        ? "incompatible_record"
+                        : "upload_failed",
+                    "partial": result.failures.count < recentRides.count
+                        ? "true"
+                        : "false"
+                ])
                 rideSyncMessage = "有 \(result.failures.count) 条记录未上传：\(firstFailure.userFacingReason)。本地记录已保留。"
                 result.failures.forEach {
                     print("Ride cloud upload failed: \($0.diagnosticDescription)")
                 }
             } else {
                 lastRideSyncAt = Date()
+                await TelemetryClient.shared.track("ride.cloud_sync_succeeded")
             }
         } catch {
+            await TelemetryClient.shared.track("ride.cloud_sync_failed", properties: [
+                "failureKind": "request_failed"
+            ])
             rideSyncMessage = "云同步失败：\(rideCloudFailureReason(error))。本地骑行记录不受影响。"
             print("Ride cloud sync failed: \(error.localizedDescription)")
         }

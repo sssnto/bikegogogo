@@ -12,6 +12,10 @@ final class WatchSessionBridge: NSObject, WCSessionDelegate {
         WCSession.isSupported() ? .default : nil
     }
 
+    var isWatchAppInstalled: Bool {
+        session?.isWatchAppInstalled ?? false
+    }
+
     func activate() {
         guard let session else { return }
         session.delegate = self

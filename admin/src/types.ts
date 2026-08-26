@@ -75,3 +75,35 @@ export type BusinessSnapshot = {
   revision: number;
   updatedAt: string;
 };
+
+export type AnalyticsEventRecord = {
+  eventName: string;
+  occurredAt: string;
+  receivedAt: string;
+  userKey?: string;
+  sessionId?: string;
+  appVersion?: string;
+  buildNumber?: string;
+  platform: "iOS" | "watchOS" | "server" | string;
+  osVersion?: string;
+  deviceFamily?: string;
+  properties: Record<string, unknown>;
+  firstSeenAt?: string;
+};
+
+export type AnalyticsEventSnapshot = {
+  events: AnalyticsEventRecord[];
+  total: number;
+  truncated: boolean;
+  latestReceivedAt?: string;
+};
+
+export type AnalyticsFreshness = {
+  latestReceivedAt?: string;
+  latestClientAt?: string;
+  latestServerAt?: string;
+  latestPushAt?: string;
+  latestLiveKitAt?: string;
+  totalEvents: number;
+  clientEvents: number;
+};

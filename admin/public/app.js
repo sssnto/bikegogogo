@@ -101,9 +101,12 @@ const bars = (series) => {
 };
 
 const panel = (title, body) => `<section class="panel"><h2>${escapeHTML(title)}</h2>${body}</section>`;
+const notice = (message, tone = "info") => `<div class="notice ${escapeHTML(tone)}">${escapeHTML(message)}</div>`;
 const dateTime = (value) => new Intl.DateTimeFormat("zh-CN", {
   dateStyle: "medium", timeStyle: "short", hour12: false
 }).format(new Date(value));
+const optionalDateTime = (value) => value ? dateTime(value) : "尚未接入";
+const percentage = (value) => value === undefined || value === null ? "暂无" : `${value}%`;
 
 async function renderOverview() {
   const data = await api(`/admin/api/v1/overview?days=${days.value}`);
@@ -146,6 +149,33 @@ async function renderRides() {
   statusLine.textContent = `业务数据更新于 ${dateTime(data.freshness)}`;
 }
 
+async function renderGrowth() {
+  const [growth, retention] = await Promise.all([
+    api(`/admin/api/v1/growth?days=${days.value}`),
+    api(`/admin/api/v1/retention?days=${days.value}`)
+  ]);
+  content.innerHTML = `
+    ${notice(growth.tracking.note, growth.tracking.available ? "success" : "warn")}
+    <div class="kpi-grid">
+      ${kpi("累计用户", growth.acquisition.totalUsers, "人")}${kpi("新增用户", growth.acquisition.newUsers, "人")}
+      ${kpi("Apple 账户", growth.acquisition.appleUsers, "人")}${kpi("Apple 转化", growth.acquisition.appleAccountPercent, "%")}
+      ${kpi("埋点活跃用户", growth.acquisition.activeUsers, "人")}${kpi("首日样本", retention.cohortUsers, "人")}
+      ${retention.retention.map((item) => kpi(`D${item.days} 留存`, item.eligible ? item.percent : "暂无", item.eligible ? "%" : "")).join("")}
+    </div>
+    <div class="panel-grid">
+      ${panel("新增账户", bars(growth.series.registrations))}
+      ${panel("客户端日活", bars(growth.series.activeUsers))}
+    </div>
+    <div class="panel-grid">
+      ${panel("首次骑行漏斗", `<div class="funnel">${growth.funnel.map((item, index) => `<div class="funnel-row"><span>${index + 1}. ${escapeHTML(item.label)}</span><strong>${escapeHTML(item.users)} 人</strong><small>${escapeHTML(item.events)} 次事件</small></div>`).join("")}</div>`)}
+      ${panel("留存样本", metricList(retention.retention.map((item) => [
+        `D${item.days}`,
+        item.eligible ? `${item.retained}/${item.eligible} · ${item.percent}%` : "观察期尚未到"
+      ])))}
+    </div>`;
+  statusLine.textContent = retention.note;
+}
+
 async function renderSocial() {
   const data = await api(`/admin/api/v1/social?days=${days.value}`);
   content.innerHTML = `
@@ -167,14 +197,57 @@ async function renderSocial() {
   statusLine.textContent = `业务数据更新于 ${dateTime(data.freshness)}`;
 }
 
+async function renderVoice() {
+  const data = await api(`/admin/api/v1/voice?days=${days.value}`);
+  content.innerHTML = `
+    ${notice(data.note, data.trueConnectionAvailable ? "success" : "warn")}
+    <div class="kpi-grid">
+      ${kpi("语音邀请", data.invitations, "次")}${kpi("邀请响应", data.responded, "次")}
+      ${kpi("邀请响应率", data.invitationResponsePercent, "%")}${kpi("真实接通", data.trueConnectionAvailable ? data.roomConnections : "待接入", data.trueConnectionAvailable ? "次" : "")}
+      ${kpi("连接失败", data.trueConnectionAvailable ? data.connectionFailures : "待接入", data.trueConnectionAvailable ? "次" : "")}${kpi("接通成功率", data.trueConnectionAvailable ? percentage(data.connectionSuccessPercent) : "待接入")}
+      ${kpi("平均通话", data.averageDurationMinutes ?? "待接入", data.averageDurationMinutes !== undefined ? "分钟" : "")}
+    </div>
+    ${panel("语音事件", data.eventDistribution.length
+      ? metricList(data.eventDistribution.map((item) => [item.name, `${item.count} 次`]))
+      : '<p class="empty">尚未收到语音质量事件</p>')}`;
+  statusLine.textContent = `业务数据更新于 ${dateTime(data.freshness)}`;
+}
+
+async function renderPush() {
+  const data = await api(`/admin/api/v1/push?days=${days.value}`);
+  content.innerHTML = `
+    ${notice(data.delivery.available ? "推送送达统计来自 APNs 服务端响应。" : "尚未收到推送发送事件；设备令牌数量仍可正常查看。", data.delivery.available ? "success" : "warn")}
+    <div class="kpi-grid">
+      ${kpi("推送设备", data.devices.total, "台")}${kpi("生产设备", data.devices.production, "台")}
+      ${kpi("测试设备", data.devices.sandbox, "台")}${kpi("提交 APNs", data.delivery.submitted, "条")}
+      ${kpi("APNs 接受", data.delivery.accepted, "条")}${kpi("发送失败", data.delivery.failed, "条")}
+      ${kpi("失效令牌", data.delivery.invalid, "个")}${kpi("接受率", data.delivery.successPercent ?? "暂无", data.delivery.successPercent !== undefined ? "%" : "")}
+    </div>
+    ${panel("通知类型", data.events.length
+      ? metricList(data.events.map((item) => [item.name, `${item.submitted - item.failed}/${item.submitted} 接受`]))
+      : '<p class="empty">统计期内没有推送发送记录</p>')}`;
+  statusLine.textContent = `设备令牌数据更新于 ${dateTime(data.freshness)}`;
+}
+
 async function renderQuality() {
-  const data = await api(`/admin/api/v1/quality?days=${days.value}`);
+  const [data, versions, freshness] = await Promise.all([
+    api(`/admin/api/v1/quality?days=${days.value}`),
+    api(`/admin/api/v1/versions?days=${days.value}`),
+    api("/admin/api/v1/data-freshness")
+  ]);
   content.innerHTML = `
     <div class="kpi-grid">
       ${kpi("运营事件", data.total, "条")}${kpi("错误事件", data.errors, "条")}
       ${kpi("错误率", data.errorRatePercent, "%")}${kpi("API p95", data.p95Milliseconds ? Math.round(data.p95Milliseconds) : "暂无", data.p95Milliseconds ? "ms" : "")}
+      ${kpi("客户端事件", versions.totalClientEvents, "条")}${kpi("客户端活跃", versions.activeUsers, "人")}
     </div>
-    ${panel("事件分布", data.events.length ? metricList(data.events.map((item) => [item.name, item.count])) : '<p class="empty">尚未收到运营事件</p>')}`;
+    ${panel("数据链路", `<div class="freshness-list">${freshness.sources.map((source) => `<div><span class="status-dot ${escapeHTML(source.state)}"></span><strong>${escapeHTML(source.name)}</strong><span>${escapeHTML(optionalDateTime(source.updatedAt))}</span><small>${source.ageMinutes === undefined ? "未配置或暂无数据" : `${escapeHTML(source.ageMinutes)} 分钟前`}</small></div>`).join("")}</div>`)}
+    ${panel("客户端版本", versions.versions.length ? `<div class="table-wrap"><table><thead><tr><th>平台</th><th>版本</th><th>构建</th><th>用户</th><th>事件</th><th>错误率</th></tr></thead><tbody>${versions.versions.map((version) => `<tr><td>${escapeHTML(version.platform)}</td><td>${escapeHTML(version.appVersion)}</td><td>${escapeHTML(version.buildNumber)}</td><td>${escapeHTML(version.users)}</td><td>${escapeHTML(version.events)}</td><td>${escapeHTML(version.errorRatePercent)}%</td></tr>`).join("")}</tbody></table></div>` : '<p class="empty">尚未收到带版本号的客户端事件</p>')}
+    <div class="panel-grid">
+      ${panel("操作系统", versions.osVersions.length ? metricList(versions.osVersions.map((item) => [item.name, `${item.users} 人`])) : '<p class="empty">暂无</p>')}
+      ${panel("设备系列", versions.devices.length ? metricList(versions.devices.map((item) => [item.name, `${item.users} 人`])) : '<p class="empty">暂无</p>')}
+    </div>
+    ${panel("事件分布", data.events.length ? metricList(data.events.slice(0, 20).map((item) => [item.name, item.count])) : '<p class="empty">尚未收到运营事件</p>')}`;
   statusLine.textContent = data.note;
 }
 
@@ -234,8 +307,10 @@ async function renderAudit() {
 }
 
 const views = {
-  overview: ["运营总览", renderOverview], rides: ["骑行运营", renderRides],
-  social: ["好友与小队", renderSocial], quality: ["应用质量", renderQuality],
+  overview: ["运营总览", renderOverview], growth: ["增长与留存", renderGrowth],
+  rides: ["骑行运营", renderRides], social: ["好友与小队", renderSocial],
+  voice: ["语音质量", renderVoice], push: ["推送运营", renderPush],
+  quality: ["版本与质量", renderQuality],
   users: ["用户支持", renderUsers], audit: ["审计日志", renderAudit]
 };
 
