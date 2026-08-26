@@ -6,12 +6,18 @@ import { z } from "zod";
 
 import { AdminDatabase, type AdminSession } from "./database.js";
 import {
+  dataFreshnessMetrics,
+  growthMetrics,
   overviewMetrics,
   periodForDays,
+  pushDeliveryMetrics,
+  retentionMetrics,
   rideMetrics,
   searchUsers,
   socialMetrics,
-  userSummary
+  userSummary,
+  versionMetrics,
+  voiceQualityMetrics
 } from "./metrics.js";
 import {
   cookie,
@@ -239,6 +245,70 @@ export async function createAdminApp(config: AdminAppConfig) {
     const period = periodForDays(daysSchema.parse(request.query).days);
     const snapshot = await database.businessSnapshot();
     return { ...socialMetrics(snapshot.state, period), freshness: snapshot.updatedAt };
+  });
+
+  app.get("/admin/api/v1/growth", async (request) => {
+    await sessionFor(request);
+    const period = periodForDays(daysSchema.parse(request.query).days);
+    const [snapshot, analytics] = await Promise.all([
+      database.businessSnapshot(),
+      database.analyticsEvents(period.from, period.to)
+    ]);
+    return growthMetrics(snapshot.state, analytics.events, period, analytics.truncated);
+  });
+
+  app.get("/admin/api/v1/retention", async (request) => {
+    await sessionFor(request);
+    const period = periodForDays(daysSchema.parse(request.query).days);
+    const analytics = await database.analyticsEvents(period.from, period.to);
+    return {
+      ...retentionMetrics(analytics.events, period),
+      truncated: analytics.truncated
+    };
+  });
+
+  app.get("/admin/api/v1/voice", async (request) => {
+    await sessionFor(request);
+    const period = periodForDays(daysSchema.parse(request.query).days);
+    const [snapshot, analytics] = await Promise.all([
+      database.businessSnapshot(),
+      database.analyticsEvents(period.from, period.to)
+    ]);
+    return {
+      ...voiceQualityMetrics(snapshot.state, analytics.events, period),
+      freshness: snapshot.updatedAt,
+      truncated: analytics.truncated
+    };
+  });
+
+  app.get("/admin/api/v1/push", async (request) => {
+    await sessionFor(request);
+    const period = periodForDays(daysSchema.parse(request.query).days);
+    const [snapshot, analytics] = await Promise.all([
+      database.businessSnapshot(),
+      database.analyticsEvents(period.from, period.to)
+    ]);
+    return {
+      ...pushDeliveryMetrics(snapshot.state, analytics.events, period),
+      freshness: snapshot.updatedAt,
+      truncated: analytics.truncated
+    };
+  });
+
+  app.get("/admin/api/v1/versions", async (request) => {
+    await sessionFor(request);
+    const period = periodForDays(daysSchema.parse(request.query).days);
+    const analytics = await database.analyticsEvents(period.from, period.to);
+    return { ...versionMetrics(analytics.events, period), truncated: analytics.truncated };
+  });
+
+  app.get("/admin/api/v1/data-freshness", async (request) => {
+    await sessionFor(request);
+    const [snapshot, analytics] = await Promise.all([
+      database.businessSnapshot(),
+      database.analyticsFreshness()
+    ]);
+    return dataFreshnessMetrics(snapshot.updatedAt, analytics);
   });
 
   app.get("/admin/api/v1/quality", async (request) => {

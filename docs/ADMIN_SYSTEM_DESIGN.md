@@ -1,8 +1,8 @@
 # BikeGoGo 运营管理后台设计
 
-> 第一阶段已落地：`admin/` 提供独立管理 API 和静态后台界面，生产镜像为
-> `bikegogogo-admin`。为减少 NAS 组件数量，第一阶段由同一容器提供 Web 与 Admin API；
-> 权限、会话、审计和数据边界仍与业务 API 独立。部署见
+> 阶段 A 与阶段 B 的核心能力已落地：`admin/` 提供独立管理 API 和静态后台界面，生产镜像为
+> `bikegogogo-admin`；服务端与 iPhone App 会写入最小化运营事件。为减少 NAS 组件数量，
+> 同一后台容器提供 Web 与 Admin API，权限、会话、审计和数据边界仍与业务 API 独立。部署见
 > [ADMIN_DEPLOYMENT.md](ADMIN_DEPLOYMENT.md)。
 
 ## 1. 建设目标
@@ -30,18 +30,19 @@ BikeGoGo 已经进入正式运营阶段。管理后台的目标不是简单展�
 - APNs token、语音邀请；
 - 90 秒自动过期的小队实时位置和集合点。
 
-但现阶段存在以下可观测性缺口：
+当前已经具备业务聚合、客户端匿名事件、API/APNs 结果、管理员权限和审计能力。仍有以下
+可观测性边界：
 
 - PostgreSQL 主要使用 `bikegogogo_app_state.payload` 单行 JSONB 保存业务状态，不适合
   直接进行长期统计和多维查询；
-- 没有客户端运营事件，无法准确计算 DAU、漏斗和留存；
-- APNs 结果和 API 错误主要存在进程日志中，没有可查询的历史统计；
-- LiveKit token 签发不等于实际进入房间，无法判断真实语音成功率和使用时长；
+- 客户端运营事件只会从部署新版 App 后开始积累，不能反向补齐历史 DAU、漏斗和留存；
+- API 与 APNs 事件只会从部署新版服务端后开始积累，旧进程日志不会自动导入；
+- 客户端可确认实际进入 LiveKit 房间，但尚未用 LiveKit webhook 从服务端交叉核验；
 - MetricKit 报告目前只保存在用户设备，不会自动上传；
-- 没有管理员账户、权限、审计日志和后台 API。
+- App Store Connect 下载、展示和崩溃报告尚未自动同步。
 
-因此，后台不能只读取当前 JSONB 数据。需要保留现有业务存储稳定性的同时，新增独立的
-运营事件和聚合数据层。
+因此，后台同时读取当前 JSONB 业务状态和独立运营事件表。事件表只保存匿名标识、有限
+枚举和设备版本信息，不保存经纬度、健康值、联系方式或音视频内容。
 
 ## 3. 总体架构
 
@@ -221,56 +222,48 @@ MetricKit 自动上传会改变现有隐私说明。实现前必须增加明确�
 
 服务端已经能够确认的业务事件不得仅依赖客户端上报，避免重复和伪造。
 
-### 6.2 第一批事件
+### 6.2 已接入事件
 
 ```text
-app.session_started
-auth.guest_created
-auth.apple_signed_in
-auth.guest_bound_to_apple
-account.deleted
-
-permission.location_result
-permission.health_result
-permission.microphone_result
-permission.notification_result
-
+app.opened
+account.session_established
+account.apple_authenticated
 ride.started
-ride.auto_paused
+ride.paused
 ride.resumed
 ride.finished
-ride.discarded
-ride.health_import_succeeded
-ride.health_import_failed
-ride.sync_succeeded
-ride.sync_failed
-ride.share_generated
+ride.cloud_sync_started
+ride.cloud_sync_succeeded
+ride.cloud_sync_failed
+ride.cloud_saved
 
-watch.connected
-watch.workout_started
-watch.workout_failed
-watch.workout_finished
-
-friend.request_sent
-friend.request_accepted
-friend.request_rejected
+social.friend_request_sent
+social.friend_request_accepted
+social.friend_request_rejected
 group.created
-group.member_joined
-group.member_left
-group.location_share_started
-group.sos_sent
+group.member_added
+group.member_removed
+group.deleted
 
-voice.invitation_sent
+voice.call_requested
+voice.call_failed
+voice.invitation_created
 voice.invitation_accepted
-voice.invitation_rejected
-voice.invitation_expired
+voice.invitation_declined
+voice.invitation_cancelled
+voice.invitation_response
+voice.token_issued
 voice.room_connected
+voice.room_connect_failed
 voice.room_disconnected
-voice.reconnected
 
 push.token_registered
+push.token_removed
 push.send_accepted
 push.send_rejected
+push.send_failed
+
+api.request_completed
 ```
 
 ### 6.3 事件公共字段
@@ -296,8 +289,9 @@ push.send_rejected
 事件中禁止包含经纬度、原始健康值、邮箱、姓名、Apple subject、访问令牌、APNs token
 和自由文本错误堆栈。错误使用有限枚举的 `errorCode`。
 
-客户端通过 `POST /v1/telemetry/events` 批量上传，单批最多 100 条，服务端按 `eventId`
-幂等去重。网络不可用时本机最多保留 500 条，按先进先出清理。
+客户端通过 `POST /v1/telemetry/events` 批量上传，当前每批最多 50 条，服务端按 `eventId`
+幂等去重。网络不可用时本机最多保留 200 条，按先进先出清理；上传失败不影响骑行、语音
+和云同步业务流程。
 
 ## 7. 数据表设计
 
@@ -465,15 +459,18 @@ Nginx Proxy Manager 配置：
 验收：管理员能看到真实线上用户、骑行和社交趋势；所有页面有数据更新时间；运营账号
 无法访问健康明细、精确坐标和密钥。
 
-### 阶段 B：完整漏斗与质量
+### 阶段 B：完整漏斗与质量（核心能力已落地）
 
-- iOS/watchOS 接入第一批运营事件；
-- 配置 LiveKit webhook；
-- 接入 App Store Connect Analytics Reports；
-- 完成增长、留存、语音、推送、版本和质量页面；
-- 增加每日聚合任务和数据延迟告警。
+- iOS 接入第一批最小化运营事件；
+- 完成增长、留存、语音、推送、版本、质量和数据新鲜度页面；
+- 使用服务端权威事件统计账户、好友、小队、骑行上传和 APNs 结果；
+- 使用客户端房间状态统计实际语音连接，不以 token 签发冒充接通；
+- 后续配置 LiveKit webhook，以交叉核验连接和通话时长；
+- 后续接入 App Store Connect Analytics Reports，补充下载、展示和 Apple 聚合崩溃数据。
 
-验收：能计算首次骑行漏斗、D1/D7/D30、真实语音接通率、云同步成功率和版本错误率。
+当前验收：新版客户端事件积累后，可计算首次骑行漏斗、D1/D7/D30、客户端确认的语音
+连接成功率、云同步成功率和版本事件错误率；缺失外部数据源时页面必须显示“未接入”，
+不得以业务数据估算代替。
 
 ### 阶段 C：受控管理能力
 
@@ -485,8 +482,9 @@ Nginx Proxy Manager 配置：
 
 验收：所有管理操作可追溯、可回滚或二次确认，且不会因为后台查询影响 App 核心接口。
 
-## 14. 首版范围结论
+## 14. 当前范围结论
 
-第一版建议立即实现阶段 A，不先做复杂的营销系统和远程修改用户数据。阶段 A 可以在不
-迁移线上核心业务表的前提下提供可靠的用户、骑行、社交、同步和服务质量视图，为后续
-事件漏斗与 App Store 数据接入打好基础。
+阶段 A 和阶段 B 的核心产品事件已经能够在不迁移线上核心业务表的前提下，提供用户、
+骑行、社交、同步、语音、推送、版本和留存视图。下一步优先完成 LiveKit webhook 与
+App Store Connect 报告接入，再进入阶段 C 的受控管理操作；在此之前不增加远程修改用户
+健康或位置数据的能力。

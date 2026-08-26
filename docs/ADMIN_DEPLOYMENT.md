@@ -107,14 +107,34 @@ ADMIN_INITIAL_TOTP_SECRET=
   token 的聚合统计。
 - API 延迟、错误与 APNs 结果写入 `analytics_events`，从新服务端镜像部署后开始积累，历史
   日志不会自动补录。
-- 客户端体验事件入口为认证后的 `POST /v1/telemetry/events`，当前服务端已准备好批量接收
-  能力；iOS 精细漏斗将在后续版本逐项接入。
+- 客户端体验事件入口为认证后的 `POST /v1/telemetry/events`。新版 iPhone App 已接入
+  打开、账户会话、骑行、云同步和语音房间状态事件；从安装该版本后开始累计，历史客户端
+  行为不会反向补录。
+- 增长页的 D1/D7/D30 以首次收到匿名客户端事件的日期为首日。新版本刚部署时 D7/D30
+  会显示样本不足，这是正常的数据成熟过程。
+- 语音连接率目前由客户端实际房间状态确认，不以 LiveKit token 签发次数代替；尚未配置
+  LiveKit webhook 时，后台数据新鲜度页会明确显示该外部数据源缺失。
 - `analytics_events` 自动保留 90 天，管理员审计日志自动保留 1 年；清理在后台服务启动时
   执行，不会删除业务骑行记录。
-- Apple 下载量、商店展示量、崩溃和留存仍以 App Store Connect 为准，第一阶段不会猜测或
+- Apple 下载量、商店展示量和 Apple 聚合崩溃仍以 App Store Connect 为准，当前后台不会猜测或
   用注册量代替这些数据。
 
-## 6. 日常维护
+## 6. 阶段 B 更新顺序
+
+本轮包含服务端、运营后台和 iPhone 客户端改动，按以下顺序更新：
+
+1. 构建并部署新版 `bikegogogo-server`，让权威业务事件和客户端批量事件入口先就绪。
+2. 构建并部署新版 `bikegogogo-admin`，确认 `/health` 正常并能打开增长、语音、推送和
+   数据新鲜度页面。
+3. 把更新后的隐私政策发布到现有隐私站点，并确认公网地址仍可访问。
+4. Archive 并上传新的 iPhone/Apple Watch 构建，通过 TestFlight 安装到真机。
+5. 启动 App，完成一次骑行、一次云同步和一次语音连接；几分钟后在后台确认事件开始出现。
+
+本轮不要求新增 Redis、消息队列或时序数据库。LiveKit webhook 和 App Store Connect
+Reports API 需要单独准备外部凭据，未配置时后台会显示“缺失”，但不影响现有业务和其他
+运营指标。
+
+## 7. 日常维护
 
 ```bash
 docker compose logs --tail=200 bikegogogo-admin

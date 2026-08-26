@@ -212,6 +212,22 @@ export async function createApp(config: AppConfig) {
     return authenticatedUser(request);
   };
 
+  const recordUserEvent = async (
+    eventName: string,
+    userId: string,
+    properties: Record<string, string | number | boolean | null> = {}
+  ): Promise<void> => {
+    await analytics.record({
+      eventName,
+      occurredAt: new Date().toISOString(),
+      platform: "server",
+      properties
+    }, userId).catch((error) => app.log.warn(
+      { err: error, eventName },
+      "Business analytics event write failed"
+    ));
+  };
+
   const notifyUser = async (
     userId: string,
     notification: PushNotification
@@ -331,6 +347,9 @@ export async function createApp(config: AppConfig) {
   }, async (request) => {
     const body = guestAuthSchema.parse(request.body);
     const session = await store.signInGuest(body.deviceId, body.displayName);
+    await recordUserEvent("account.session_established", session.user.id, {
+      provider: "guest"
+    });
     return {
       accessToken: session.accessToken,
       user: publicUser(session.user)
@@ -357,6 +376,10 @@ export async function createApp(config: AppConfig) {
       deviceId: body.deviceId,
       currentUserId: currentUser?.id
     });
+    await recordUserEvent("account.session_established", session.user.id, {
+      provider: "apple"
+    });
+    await recordUserEvent("account.apple_authenticated", session.user.id);
     return {
       accessToken: session.accessToken,
       user: publicUser(session.user)
@@ -487,6 +510,9 @@ export async function createApp(config: AppConfig) {
       body.token.toLowerCase(),
       body.environment
     );
+    await recordUserEvent("push.token_registered", currentUser.id, {
+      environment: body.environment
+    });
     return reply.status(204).send();
   });
 
@@ -498,6 +524,9 @@ export async function createApp(config: AppConfig) {
       body.token.toLowerCase(),
       body.environment
     );
+    await recordUserEvent("push.token_removed", currentUser.id, {
+      environment: body.environment
+    });
     return reply.status(204).send();
   });
 
@@ -555,6 +584,9 @@ export async function createApp(config: AppConfig) {
         entityId: friendRequest.id
       });
     }
+    await recordUserEvent("social.friend_request_sent", currentUser.id, {
+      status: friendRequest.status
+    });
     return reply.status(friendRequest.status === "accepted" ? 200 : 201).send({
       request: publicFriendRequest(
         friendRequest,
@@ -586,6 +618,12 @@ export async function createApp(config: AppConfig) {
             entityId: currentUser.id
           });
         }
+        await recordUserEvent(
+          action === "accept"
+            ? "social.friend_request_accepted"
+            : "social.friend_request_rejected",
+          currentUser.id
+        );
         return { request: { id: friendRequest.id, status: friendRequest.status } };
       }
     );
@@ -608,6 +646,9 @@ export async function createApp(config: AppConfig) {
     const currentUser = authenticatedUser(request);
     const body = groupBodySchema.parse(request.body);
     const group = await store.createGroup(currentUser.id, body.name);
+    await recordUserEvent("group.created", currentUser.id, {
+      memberCount: group.memberIds.length
+    });
     return reply.status(201).send({
       group: publicGroup(store, group, currentUser.id)
     });
@@ -641,6 +682,9 @@ export async function createApp(config: AppConfig) {
         event: "group_invitation",
         entityId: group.id
       });
+      await recordUserEvent("group.member_added", currentUser.id, {
+        memberCount: group.memberIds.length
+      });
     }
     return { group: publicGroup(store, group, currentUser.id) };
   });
@@ -654,6 +698,9 @@ export async function createApp(config: AppConfig) {
       params.userId
     );
     liveLocations.remove(params.groupId, params.userId);
+    await recordUserEvent("group.member_removed", currentUser.id, {
+      memberCount: group.memberIds.length
+    });
     return { group: publicGroup(store, group, currentUser.id) };
   });
 
@@ -663,6 +710,7 @@ export async function createApp(config: AppConfig) {
     await store.deleteGroup(params.groupId, currentUser.id);
     liveLocations.removeGroup(params.groupId);
     meetingPoints.removeGroup(params.groupId);
+    await recordUserEvent("group.deleted", currentUser.id);
     return reply.status(204).send();
   });
 
@@ -901,6 +949,10 @@ export async function createApp(config: AppConfig) {
         }
       })
     ));
+    await recordUserEvent("voice.invitation_created", currentUser.id, {
+      targetKind: invitation.targetKind,
+      recipientCount: invitation.recipientIds.length
+    });
 
     return reply.status(201).send({
       invitation: publicVoiceInvitation(store, invitation)
@@ -914,6 +966,13 @@ export async function createApp(config: AppConfig) {
     const invitation = await store.respondToVoiceInvitation(
       params.invitationId,
       currentUser.id
+    );
+    await recordUserEvent(
+      body.action === "accept"
+        ? "voice.invitation_accepted"
+        : "voice.invitation_declined",
+      currentUser.id,
+      { targetKind: invitation.targetKind }
     );
     return {
       invitation: publicVoiceInvitation(store, invitation),
@@ -937,6 +996,9 @@ export async function createApp(config: AppConfig) {
         data: { invitationId: invitation.id }
       })
     ));
+    await recordUserEvent("voice.invitation_cancelled", currentUser.id, {
+      targetKind: invitation.targetKind
+    });
     return reply.status(204).send();
   });
 
@@ -992,6 +1054,12 @@ export async function createApp(config: AppConfig) {
       canSubscribe: body.canSubscribe,
       canPublishData: true,
       canUpdateOwnMetadata: true
+    });
+
+    await recordUserEvent("voice.token_issued", currentUser.id, {
+      targetKind: params.groupId.startsWith("grp_") ? "group" : "friend",
+      canPublish: body.canPublish,
+      canSubscribe: body.canSubscribe
     });
 
     return reply.send({
@@ -1079,6 +1147,11 @@ export async function createApp(config: AppConfig) {
       throw new StoreError("ride_id_mismatch", 400, "Ride ID does not match URL");
     }
     const ride = await store.upsertRide(currentUser.id, { ...body, id: rideId });
+    await recordUserEvent("ride.cloud_saved", currentUser.id, {
+      source: body.source,
+      hasRoute: body.points.length > 0,
+      hasWeather: body.weather !== undefined
+    });
     return { ride: publicRide(ride) };
   });
 
